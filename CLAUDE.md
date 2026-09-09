@@ -33,6 +33,6 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 ```
 
 ## 当前指针(随推进更新 — 上次更新 2026-09-09)
-- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段2-步骤5 | 模块 E1–E9 已注册(P2-3 细化中) | <阶段2 首个样本定> | <阶段2 首个样本定>
-- 进度:阶段1 ✔(gate PASS);阶段2-步骤3(P2-1 七层蓝图)✔ · 步骤4(P2-2 评测内核/状态机/评估集 schema 规划)✔。真实被测已登记:`01.FastAPI RAG Agent`(chat 已 env 可配、切 DeepSeek 可首跑,commit `36aa291`)。
-- **下一步**:B 阶段2 · 步骤5(P2-3,各模块细化设计)→ `contracts/` + spec,从 E1 评测集管理 / E2 被测适配器起;北极星/阈值用首样本(迷你 RAG-QA 或真实 37 golden)标定。
+- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段2 完成(待 gate-review)→ 阶段3-步骤6 | 模块 E1–E9 已设计 | <阶段2 首样本定> | <阶段2 首样本定>
+- 进度:阶段1 ✔(gate PASS);阶段2 全节点 P2-1(蓝图)/P2-2(内核/状态机/评估规划)/P2-3(模块细化 + `contracts/评测-*.md` 四份 + spec)✔。真实被测已登记:`01.FastAPI RAG Agent`(chat 已 env 可配、切 DeepSeek 可首跑,commit `36aa291`)。
+- **下一步**:阶段2 gate-review → PASS 后开 B 阶段3 · 步骤6(P3-1 代码:E1→E2→E3→E4→E5→E6/E7,迷你 RAG-QA 自证闭环)。北极星/阈值用首样本(mini RAG-QA 或真实 37 golden)标定。
