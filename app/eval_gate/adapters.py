@@ -6,7 +6,11 @@
 from __future__ import annotations
 
 import enum
+import json
+import os
 import time
+import urllib.error
+import urllib.request
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
@@ -50,6 +54,70 @@ class SutAdapter:
         raise NotImplementedError
 
 
+class SutAdapterError(Exception):
+    """带错误分级的被测错误(供 E5 重试/熔断判定)。"""
+
+    def __init__(self, code: SutErrorCode, message: str):
+        super().__init__(f"[{code.name}] {message}")
+        self.code = code
+
+
+class FastApiRagAdapter(SutAdapter):
+    """真实被测 `01.FastAPI RAG Agent` 的 /rag/search 适配器。
+
+    - 配置:EVAL_SUT_FASTAPI_BASE_URL(默认 http://localhost:8000)/ EVAL_SUT_FASTAPI_API_KEY;
+    - post 可注入(离线测试);真实实现走 urllib(POST JSON);
+    - 错误映射:E_SUT_AUTH/QUOTA/4XX/5XX/BAD_RESPONSE(contracts/评测-sut-adapter.md)。
+    """
+
+    id = "fastapi-rag"
+
+    def __init__(self, base_url: str | None = None, api_key: str | None = None,
+                 post: Callable | None = None, top_k: int = 3, mode: str = "accurate"):
+        self.base_url = (base_url or os.getenv("EVAL_SUT_FASTAPI_BASE_URL", "http://localhost:8000")).rstrip("/")
+        self.api_key = api_key if api_key is not None else os.getenv("EVAL_SUT_FASTAPI_API_KEY", "")
+        self.top_k = top_k
+        self.mode = mode
+        self._post = post or self._default_post
+
+    def _default_post(self, url: str, headers: dict, payload: dict) -> tuple[int, dict]:
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=body, method="POST", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.status, json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            try:
+                data = json.loads(e.read().decode("utf-8"))
+            except (json.JSONDecodeError, OSError):
+                data = {}
+            return e.code, data
+        except urllib.error.URLError as e:
+            raise SutAdapterError(SutErrorCode.E_SUT_TIMEOUT, f"被测不可达: {e}")
+
+    def run_case(self, case: Case) -> SutOutput:
+        url = f"{self.base_url}/api/v1/rag/search?mode={self.mode}"
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        payload = {
+            "question": case.input["question"], "top_k": self.top_k,
+            "generate_answer": True, "citations": True,
+        }
+        status, data = self._post(url, headers, payload)
+        if status == 200:
+            answer = data.get("answer")
+            if not isinstance(answer, str) or not answer.strip():
+                raise SutAdapterError(SutErrorCode.E_SUT_BAD_RESPONSE, "响应无 answer 文本")
+            sources = [s.get("id") for s in (data.get("sources") or []) if isinstance(s, dict) and s.get("id")]
+            return SutOutput(answer=answer, sources=sources, raw=data,
+                             meta={"sut": self.id, "http_status": status})
+        if status in (401, 403):
+            code = SutErrorCode.E_SUT_AUTH if status == 401 else SutErrorCode.E_SUT_QUOTA
+            raise SutAdapterError(code, str(data.get("detail") or data))
+        if status >= 500:
+            raise SutAdapterError(SutErrorCode.E_SUT_5XX, f"被测 5xx: {status} {data}")
+        raise SutAdapterError(SutErrorCode.E_SUT_4XX, f"被测 4xx: {status} {data}")
+
+
 class MiniRagQaAdapter(SutAdapter):
     """自带迷你 RAG-QA 被测(包装 mini_rag);quality 模拟 prompt 好坏。"""
 
@@ -89,3 +157,4 @@ def list_adapters() -> list[str]:
 
 
 register_adapter(MiniRagQaAdapter.id, MiniRagQaAdapter)
+register_adapter(FastApiRagAdapter.id, FastApiRagAdapter)

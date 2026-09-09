@@ -1,0 +1,27 @@
+# eval-gate CI 示例:评测门独立成 job(不并入纯代码门绿灯)。
+# 纪律:改 Prompt/工具/记忆/评测集 → 必跑评测回归;低于阈值阻断(eval/阈值.md)。
+name: eval-gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安装(dev 含 pytest)
+        run: pip install -e '.[dev]'
+      - name: 单元 + 契约测试(离线、零外网)
+        run: pytest -q
+      - name: 自证:忠实被测应过门(exit 0)
+        run: python -m eval_gate run --evals eval/mini_rag_qa.evals.json --mode good --offline
+      - name: 劣化回归:应被门拦(exit 1,故意演示门真的会拦)
+        run: python -m eval_gate run --evals eval/mini_rag_qa.evals.json --mode bad --offline
+      # 真实被测/真 judge 冒烟:配置密钥后放开(EVAL_LIVE=1)
+      # - name: 真实冒烟(需密钥)
+      #   run: EVAL_LIVE=1 pytest -q tests/test_live_smoke.py
