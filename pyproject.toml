@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-eval-gate"
+version = "0.1.0"
+description = "Agent 生产就绪评测门:评测集 + 确定性规则 + LLM-as-Judge + 阈值门(自用先行)"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+eval-gate = "eval_gate.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "app"}
+packages = ["eval_gate"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
