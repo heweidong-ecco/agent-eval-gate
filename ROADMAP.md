@@ -7,17 +7,18 @@
 
 ## 当前指针(每次 commit 前更新)
 
-- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:`main | 阶段3-步骤6 | E1–E6 竖切(离线自证✔,阶段3 未完) | <首样本定> | <首样本定>`
-- **下一步**:见下方「P3-1 余留待办(下次从这里接)」。
+- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:`main | 阶段3-步骤6 | E1–E9 已签核(E1–E6 竖切离线自证✔) | <首样本定:迷你先行→37golden> | 劣化被拦次数(D-1 签核)>`
+- **定调**:阶段1/2 已由业务方逐条签核(D-1..D-9,2026-09-10,见 `docs/decisions/定调复核-签核记录.md`);P3 代码冻结已解除。
+- **下一步**:见下方「P3-1 余留待办」R1→R4。
 
-### P3-1 余留待办(下次从这里接 · 2026-09-09)
-> 代码已就绪、离线全绿;以下按序推进,完成项打 ☑。
+### P3-1 余留待办(下次从这里接 · 2026-09-10)
+> 代码已就绪、离线全绿;定调已签核。以下按序推进,完成项打 ☑。
 - [ ] **R1 真实链路冒烟**(需被测服务在跑):起 `01.FastAPI RAG Agent`(绝对路径 `/Users/heweidong/Desktop/ai-learning/重点教学内容/01.FastAPI RAG Agent`,已切 DeepSeek,commit `36aa291`)→ 本仓 `.env` 配 `EVAL_JUDGE_*`(可复用同 key)+ `EVAL_SUT_FASTAPI_BASE_URL=http://localhost:8000` + `EVAL_SUT_FASTAPI_API_KEY` + `EVAL_LIVE=1` → `.venv/bin/python -m pytest tests/test_live_smoke.py -v`。
 - [ ] **R2 真实首样本标定**:把被测 `archive/artifacts/eval_dataset.json`(37 golden)转档成评测集(逐条标 `source`、按契约 `sut:"fastapi-rag"`),用 fastapi-rag 适配器跑 → 标定**北极星/阈值**,回填 `eval/阈值.md` 与 `总纲.md` §4(替换占位)。
 - [ ] **R3 观测/trace 左移(E9)**:结构化日志 + run_id trace 贯通(run 已带 run_id;报告已入 `eval/runs/`);可选接 OTel。
 - [ ] **R4 阶段3 门禁验收**:对照 B `04-阶段3` 卡逐条,契约测试/观测/劣化可拦齐备后 **由业务方判 PASS**(非自评)。
 - [ ] 横向:评测门接入真实被测 PR 流程(CI `eval-gate.yml` 放开 EVAL_LIVE/密钥示例)。
-- ⚠️ 待你确认清单:`docs/decisions/决策确认清单-P1-P2.md`(C1 架构定位 / C2 命名 / A5 MVP 范围 = 影响最大)。
+- ✅ 定调已签核(D-1..D-9,2026-09-10):C1 架构定位=评测引擎判文本答案、C2 E1–E9、MVP 纯 CLI、契约/评测集内容全认可。见 `docs/decisions/定调复核-签核记录.md`(替代原 `决策确认清单` 的待确认态)。
 - 首发接入对象已登记:自用 `01.FastAPI RAG Agent`(真实被测,U2)。来源 `需求基线.md` §11。
 - 阶段1 Walk-through 登记风险(阶段2 消化):上下文/成本上限(评测集大→分批/抽样/截断)、确定性检查先于 judge 的管线顺序锁(已入总纲 §1 不变量)、评测集版本与代码同步。来源 `需求基线.md` §8 W1–W3。
 

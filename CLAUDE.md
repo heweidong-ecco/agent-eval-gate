@@ -32,8 +32,8 @@ eval/ · observability/ · 飞轮/                       # 评估门/观测/数�
 app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 ```
 
-## 当前指针(随推进更新 — 上次更新 2026-09-09)
-- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段3-步骤6 | E1–E6 竖切(离线自证✔,阶段3 未完) | <首样本定> | <首样本定>
-- 进度:阶段1 ✔ · 阶段2 全节点(P2-1/2/3 + contracts + spec)✔;阶段3-步骤6 P3-1 首跑:`app/eval_gate/` E1–E7 竖切,`pytest` 42 passed(离线零外网);演示 good→exit0 / bad→exit1 被拦。真实被测已登记:`01.FastAPI RAG Agent`(chat 已 env 可配、切 DeepSeek,commit `36aa291`)。
-- **⚠️ 待你确认**:`docs/decisions/决策确认清单-P1-P2.md`(C1 架构定位 / C2 命名 / A5 MVP 范围影响最大)。阶段门 PASS 由你验收,非自评。
+## 当前指针(随推进更新 — 上次更新 2026-09-10)
+- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段3-步骤6 | E1–E9 已签核(E1–E6 竖切离线自证✔) | <首样本定:迷你先行→37golden> | 劣化被拦次数(D-1)
+- 进度:阶段1/2 **业务方逐条签核 D-1..D-9(2026-09-10)** 定稿通过(见 `docs/decisions/定调复核-签核记录.md`);阶段3-步骤6 P3-1 首跑:`app/eval_gate/` E1–E7 竖切 + fastapi-rag 适配器 + CI 示例,`pytest` 47 passed(离线零外网);演示 good→exit0 / bad→exit1 被拦。真实被测已登记:`01.FastAPI RAG Agent`(chat 已 env 可配、切 DeepSeek,commit `36aa291`)。
+- **阶段门纪律**:gate-review 出建议、终裁 = 业务方签核(本指针/节点 ✔ 均以此为准,不再自评 PASS)。
 - **下一步**:接续锚 = ROADMAP「P3-1 余留待办」R1→R4(真实链路冒烟 → 37 golden 标定 → 观测左移 → 阶段3 门禁验收)。
