@@ -28,6 +28,33 @@ eval/
 - `evals.json` / `cases/` 随代码同库提交、可 diff、可回滚;`runs/` 记录每次回归的 commit 与结果。
 - 工具:DeepEval / Promptfoo / agent-eval / Ragas(评估引擎按需选,参考 B `07-参考-技术选型对比` §五;组织自己定义质量模型)。
 
+## 评测集 schema 草案(阶段2-步骤4 启动 · 总纲 §3.3 落点)
+> 骨架先定,字段 P2-5/P3 细化。**消歧**:本文件 `module` 标签 = **被测 Agent 的行为类别**(task/rag/memory/tool-mcp/eval),供回归归因;不是评测门自身模块(评测门模块见 `总纲.md` §3 E1–E9)。
+
+单条(evals.json / cases/*.json):
+```jsonc
+{
+  "id": 1,
+  "sut": "mini-rag-qa | fastapi-rag",          // E2 被测适配器 id
+  "module": "rag",                              // 被测行为类别(module 标签)
+  "tags": ["happy-path", "boundary", "adversarial", "refusal", "regression"],
+  "input": { "question": "…", "context": {} },  // 供适配器组请求
+  "expected": {
+    "answer_contains": ["…"],                   // 含关键点(任意符合即可)
+    "answer_not_contains": ["…"],               // 禁现(幻觉/越权话术)
+    "must_refuse": false,                        // 拒答负例标记(知识外)
+    "ideal_tool_seq": []                         // v1.1 回放用(理想工具序列)
+  },
+  "checks": { "deterministic_only": true },      // true=红队/注入,只走确定性引擎(E3),不进 LLM-judge
+  "source": "01.FastAPI RAG Agent archive eval_dataset.json id:12"  // 外部数据来源标注
+}
+```
+运行级顶层:`_threshold` → `eval/阈值.md`;`_sample` → 上限/随机种子(可复现);`_judge` → `{model, max_tokens, concurrency}`(DEC-002)。
+
+首用规划:
+- **mini RAG-QA 自证**:自造 ~10 条(≥2 拒答负例 + ≥1 注入红队),先验工具与管线顺序。
+- **真实被测**:从 `01.FastAPI RAG Agent/archive/artifacts/eval_dataset.json`(37 golden,含拒答)转档,逐条标 `source`;其 RAGAS 历史基线(faithfulness 0.63/context_recall 0.76)作**参考横向**(来源标注),不作本门断言。
+
 ## 开始使用
 1. 阶段2-步骤4 起:每规划一个模块就为它建首批用例(意图/工具序列/答案)。
 2. 阶段4-步骤8/9:跑回归,沉淀 L2 基线;发布前跑 `阈值.md` 全部门禁。
