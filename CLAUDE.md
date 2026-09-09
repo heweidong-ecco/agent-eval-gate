@@ -36,4 +36,4 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 - `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段3-步骤6 | E1–E6 竖切(离线自证✔,阶段3 未完) | <首样本定> | <首样本定>
 - 进度:阶段1 ✔ · 阶段2 全节点(P2-1/2/3 + contracts + spec)✔;阶段3-步骤6 P3-1 首跑:`app/eval_gate/` E1–E7 竖切,`pytest` 42 passed(离线零外网);演示 good→exit0 / bad→exit1 被拦。真实被测已登记:`01.FastAPI RAG Agent`(chat 已 env 可配、切 DeepSeek,commit `36aa291`)。
 - **⚠️ 待你确认**:`docs/decisions/决策确认清单-P1-P2.md`(C1 架构定位 / C2 命名 / A5 MVP 范围影响最大)。阶段门 PASS 由你验收,非自评。
-- **下一步**:P3-1 收口(fastapi-rag 真适配 + 真 judge 冒烟 + 契约测试 + CI 示例);北极星/阈值用首样本标定。
+- **下一步**:接续锚 = ROADMAP「P3-1 余留待办」R1→R4(真实链路冒烟 → 37 golden 标定 → 观测左移 → 阶段3 门禁验收)。
