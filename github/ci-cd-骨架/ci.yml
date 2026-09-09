@@ -1,0 +1,119 @@
+# CI 骨架:PR + push 卡门
+# 两套独立门(别合并成一个绿灯,引 docs/留痕×指标挂钩.md §三):
+#   1) 代码门(job: test-backend / build-frontend / docker-build):lint → test → build
+#   2) 评估门(job: eval-gate):变更即跑评估集,低于阈值红 —— Agent 核心门
+#
+# 参考:代码门 = 通用工程壳;eval-gate 依据 B 知识库:
+#   - 02-执行方法论/02-方法论-工程纪律与CI-CD-v1.0.md §4.1(评估流水线,低于阈值自动阻断发布)
+#   - 05-独立模块工作流/05-模块-评估与测试-v1.0.md(评估集三类标注/统计回归/先定阈值再看结果/失败即补 case)
+#   - 07-外部参考与落地/07-参考-技术选型对比-v1.0.md §五(评估引擎:DeepEval/Promptfoo/agent-eval/Ragas…)
+#   ⚠️ 评估引擎选型未在本 Kit 定死,由项目 DEC 决定(见 docs/DEC-选型模板.md)。下面给"最小可跑示例结构",按项目替换命令。
+#
+# 按项目实际改路径/命令。参考宿主栈:Python(FastAPI)+ 前端(可选 Node)。
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  # ---------- ① 代码门 ----------
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: |
+          pip install -r backend/requirements-dev.txt
+      - name: Lint
+        run: |
+          ruff check backend/ || true   # 若用 ruff;否则替换 flake8/pylint
+      - name: Test
+        run: |
+          pytest backend/tests -q
+
+  build-frontend:   # 若含 Node 前端(统一入口):启用并配 node
+    if: false        # 有前端时改 true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci && npm run build
+        working-directory: frontend
+
+  docker-build:
+    needs: [test-backend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        run: docker compose build
+
+  # ---------- ② 评估门 eval-gate(Agent 核心门)----------
+  # 触发策略:默认每次 PR/push 都跑(最稳);若嫌慢,可用 paths 只在改动
+  # Prompt/工具/记忆/评估集相关路径时触发(引 B 02-方法论-工程纪律 §4.1"改 Prompt/工具/记忆策略即跑")。
+  eval-gate:
+    runs-on: ubuntu-latest
+    needs: [test-backend]
+    # paths:  # 可选:按需收窄触发面
+    #   - 'evals/**'
+    #   - '**/prompts/**'
+    #   - '**/tools/**'
+    #   - '**/memory/**'
+    env:
+      EVAL_THRESHOLD: '90'        # 阈值(先定阈值再看结果——B 05-模块-评估与测试 §10.3);按项目 DEC 设
+      EVAL_REPORT: 'evals/report.json'   # 评估器产出的汇总报告路径(约定)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install eval harness
+        # ⚠️ 引擎选型见 B 07-参考-技术选型对比 §五(DeepEval/Promptfoo/agent-eval/Ragas…)+ 项目 DEC。
+        # 最小可跑示例用 pytest + 自写断言;真实项目替换为所选引擎的命令。
+        run: |
+          pip install -r evals/requirements.txt || pip install pytest
+      - name: Run eval suite
+        # 约定:评估器把"通过率/指标"写进 $EVAL_REPORT(JSON),失败或缺失即 job 失败。
+        # 示例命令仅示意 —— 请替换为你 DEC 定的评估器调用。
+        run: |
+          pytest evals -q --json-report --json-report-file="$EVAL_REPORT" || true
+          python - <<'EOF'
+          import json, os, sys
+          th = float(os.environ.get("EVAL_THRESHOLD", "90"))
+          path = os.environ.get("EVAL_REPORT", "evals/report.json")
+          if not os.path.exists(path):
+              print(f"::error::评估报告缺失 {path} —— 请先让评估器产出 JSON 报告")
+              sys.exit(1)
+          with open(path) as f:
+              rep = json.load(f)
+          # 通过率口径与你的评估器对齐(此处示例:pytest-json-report 的 passed/(passed+failed))
+          p = rep.get("summary", {})
+          passed = p.get("passed", 0); failed = p.get("failed", 0)
+          total = passed + failed
+          rate = (passed / total * 100) if total else 0.0
+          print(f"eval-gate: passed={passed} failed={failed} rate={rate:.1f}% threshold={th:.1f}%")
+          if total == 0:
+              print("::error::评估集为空 —— 先补 case(失败即补,引 B 05-模块-评估与测试)")
+              sys.exit(1)
+          if rate < th:
+              print(f"::error::评估回归低于阈值({rate:.1f}% < {th:.1f}%) → 阻断")
+              sys.exit(1)
+          print("::notice::评估回归通过")
+          EOF
+      - name: Upload eval report (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: ${{ env.EVAL_REPORT }}
+
+# 门禁判定说明(B 05-模块-评估与测试 §四):低于阈值 = Block;发布流水线见 deploy.yml,
+# 其前置条件包含本 eval-gate 绿(评估门 与 代码门 独立可看)。

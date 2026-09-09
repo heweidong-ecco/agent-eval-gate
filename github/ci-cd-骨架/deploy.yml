@@ -1,0 +1,102 @@
+# CD 骨架:发布 = 影子/金丝雀 → 全量 + 秒级回滚(Agent 版)
+# 用法:打 tag v* 触发。给 VM/云配 deploy key 或 GH 环境 secrets(HOST / SSH_KEY / REGISTRY / CLOUD 等)。
+#
+# 发布节奏依据 B 知识库:
+#   - 06-持续优化策略/06-优化-版本迭代与发布策略-v1.0.md §3 发布流程:
+#        变更 → 评估集回归(门禁,见 ci.yml eval-gate)→ 灰度(10%→50%→100%)→ 全量 → 监控观察(回滚预案)
+#   - 04-分阶段工作流/04-阶段6-上线运营 + agent-system-creator/SKILL.md 步骤 11:
+#        投放节奏 = 影子模式(Shadow)→ 内测 → 灰度(10%→逐步扩大)→ 全量;任一层指标劣化即回滚
+#   - 05-独立模块工作流/05-模块-监控告警与仪表盘:灰度新旧同屏对比 L1/L2/L3,无劣化才放量
+#   - 05-独立模块工作流/05-模块-提示工程与模型路由:模型/Prompt 路由网关秒级回滚
+#
+# ⚠️ 真人授权上线:发布授权 = 你(总工/发布人),不是自动。下面用 GitHub Environments 的
+#    required reviewers(Environment protection rule)卡住 canary→prod 的放量;先跑 canary,
+#    你看《L1/L2/L3 对比表》(docs/留痕×指标挂钩.md)确认无劣化后再 Approve 放量。回滚动作也由你触发。
+# ⚠️ 本文件是"骨架/结构示意",按项目真实部署方式(单机 Compose / 云 PaaS / K8s)替换命令。
+
+name: deploy
+
+on:
+  push:
+    tags: ['v*']          # 发布点 = 打 tag vX.Y.Z;tag 必附《L1/L2/L3 对比表》(人工/脚本)
+  workflow_dispatch:      # 允许手动触发(如回滚到某 tag)
+    inputs:
+      target_tag:
+        description: '回滚目标 tag(如 v0.1.0);仅 rollback job 使用'
+        required: false
+        default: ''
+
+env:
+  # 按项目替换;模型/Prompt 版本来自代码库(同库版本管理,引 B 06-优化-版本迭代 §2.1)
+  APP_TAG: ${{ github.ref_name }}
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images
+        run: docker compose build
+      - name: Push images (占位)
+        # 示例:推到 registry,或用 rsync + remote docker compose
+        env:
+          SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          HOST: ${{ secrets.VM_HOST }}
+        run: |
+          mkdir -p ~/.ssh && echo "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          rsync -az --delete -e ssh ./ $HOST:/srv/app/ --exclude .git
+          ssh $HOST "cd /srv/app && docker compose build && docker compose up -d --scale app=0"  # 示例占位
+
+  # ---- 金丝雀(Canary/灰度,先 10%)----
+  # environment: canary 配 protection rule:required reviewers = 你 → 走到这步会等你真人 Approve。
+  # 影子模式(Shadow)可在此步之前:旁路复制流量到新版本,只对比不承接(引 SKILL 步骤 11);
+  # 若项目已具备旁路,加一个 shadow 步骤或 job,否则从 canary 起步。
+  deploy-canary:
+    needs: [build-push]
+    runs-on: ubuntu-latest
+    environment: canary      # 灰度流量 ~10%(按租户/流量百分比,引 B 06-优化-版本迭代 §2.3)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy canary (10%)
+        run: |
+          echo "canary deploy tag=$APP_TAG"  # TODO: 替换为真实切流命令(如路由网关把 10% 流量指到新版本)
+          # 观测:切流后由监控对比 L1/L2/L3(05-模块-监控告警),结论写回 Release/issue。
+      - name: Wait for canary observation
+        run: sleep 300   # 观察窗口:对比结论时长由项目定(引 B 02-方法论-工程纪律 CI-CD 关键度量)
+
+  # ---- 全量 ----
+  # environment: production 配 protection rule:required reviewers = 你 → 真人授权全量。
+  # 劣化即不 Approve → 走 rollback(下)或直接切回上一 tag。
+  deploy-prod:
+    needs: [deploy-canary]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Full rollout (10%→50%→100%)
+        run: |
+          echo "full rollout tag=$APP_TAG"  # TODO: 替换为真实放量命令(逐步 10→50→100)
+      - name: Release note
+        run: |
+          echo "deployed $(git describe --tags) — 附《L1/L2/L3 对比表》见 Release" >> $GITHUB_STEP_SUMMARY
+
+  # ---- 回滚预案(秒级)----
+  # 手动触发:workflow_dispatch 输入 TARGET_TAG=上一稳定 tag;或由监控劣化告警触发。
+  # 秒级回滚真实落点 = 模型/Prompt 路由网关一键切回旧版本(B 05-模块-提示工程与模型路由 §四);
+  # 代码/依赖级回滚 = 切回旧 tag 重跑本流程。
+  rollback:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rollback to target tag
+        env:
+          TARGET_TAG: ${{ inputs.target_tag || 'v0.1.0' }}
+        run: |
+          echo "rollback to $TARGET_TAG"  # TODO: 路由网关切流回旧版本 / git checkout <旧tag> 重跑
+      - name: Record rollback (可审计,引 B 06-优化-版本迭代 §2.4)
+        run: echo "rollback recorded $TARGET_TAG, time=$(date -u +%FT%TZ)" >> $GITHUB_STEP_SUMMARY
+
+# 配套:GitHub Release + changelog + 《L1/L2/L3 对比表》在发布点打(人工/脚本);
+# 每版本绑定评估报告与发布记录(引 B 06-优化-版本迭代 §2.1),回滚动作可记录可审计。

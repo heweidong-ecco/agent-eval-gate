@@ -1,0 +1,31 @@
+# OS / 编辑器
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# 环境与密钥(永远不入库)
+.env
+.env.*
+!.env.example
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# 构建产物
+dist/
+build/
+*.log
+
+# 运行时数据(评估运行记录本地保留,提交摘要即可)
+eval/runs/*.local.json
+
+# 观测本地后端数据(如 Phoenix/Jaeger 本地存储)
+observability/.local/
+*.db
+*.sqlite3
+
+# 本地脚手架生成的样例(不入库;样例项目单独建仓)
+scaffold/_generated/
