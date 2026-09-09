@@ -33,6 +33,7 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 ```
 
 ## 当前指针(随推进更新 — 上次更新 2026-09-09)
-- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段2 完成(待 gate-review)→ 阶段3-步骤6 | 模块 E1–E9 已设计 | <阶段2 首样本定> | <阶段2 首样本定>
-- 进度:阶段1 ✔(gate PASS);阶段2 全节点 P2-1(蓝图)/P2-2(内核/状态机/评估规划)/P2-3(模块细化 + `contracts/评测-*.md` 四份 + spec)✔。真实被测已登记:`01.FastAPI RAG Agent`(chat 已 env 可配、切 DeepSeek 可首跑,commit `36aa291`)。
-- **下一步**:阶段2 gate-review → PASS 后开 B 阶段3 · 步骤6(P3-1 代码:E1→E2→E3→E4→E5→E6/E7,迷你 RAG-QA 自证闭环)。北极星/阈值用首样本(mini RAG-QA 或真实 37 golden)标定。
+- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段3-步骤6 | E1–E6 竖切(离线自证✔,阶段3 未完) | <首样本定> | <首样本定>
+- 进度:阶段1 ✔ · 阶段2 全节点(P2-1/2/3 + contracts + spec)✔;阶段3-步骤6 P3-1 首跑:`app/eval_gate/` E1–E7 竖切,`pytest` 42 passed(离线零外网);演示 good→exit0 / bad→exit1 被拦。真实被测已登记:`01.FastAPI RAG Agent`(chat 已 env 可配、切 DeepSeek,commit `36aa291`)。
+- **⚠️ 待你确认**:`docs/decisions/决策确认清单-P1-P2.md`(C1 架构定位 / C2 命名 / A5 MVP 范围影响最大)。阶段门 PASS 由你验收,非自评。
+- **下一步**:P3-1 收口(fastapi-rag 真适配 + 真 judge 冒烟 + 契约测试 + CI 示例);北极星/阈值用首样本标定。
