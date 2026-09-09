@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "KIT_SENTINEL=1 .claude/hooks/kit-sentinel.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
