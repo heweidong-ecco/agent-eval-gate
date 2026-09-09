@@ -17,7 +17,7 @@
 
 ## 纪律(精简;全量见 B 横切原则 + Kit README)
 - 动手前查 skills 是否命中:**agent-system-creator**(造 Agent 主流程,触发优先)主持;superpowers=编码/测试引擎;gate-review / 留痕-checks 卡门;**kit-feedback**(Kit 缺陷反馈)(路由见 Kit `skills-router.md`)。
-- **Kit 缺陷反馈(本仓=母体试金石)**:5 触发点(init / 定调压测门 / gate-review / 留痕-checks / 节点完成)末尾必问「本轮暴露母体 Kit 缺陷吗?是→登记 `docs/kit-缺陷登记.md`(证据+最小修复建议)」。修母体先经业务方审批后回流。
+- **Kit 缺陷反馈(本仓=母体试金石)**:5 触发点(init / 定调压测门 / gate-review / 留痕-checks / 节点完成)末尾自查「本轮暴露母体 Kit 缺陷吗?是→**提请回写母体** product-agent-dev-os `docs/kit-缺陷登记.md`(证据+最小修复建议)」。**本仓/派生项目不留登记表**(记录统一存母体 .git+GitHub);修母体先经业务方审批后回流。
 - 技术/合规/业务表述只准引用事实源(`需求基线.md` + B);AI 不凭空写。
 - **横切原则当红线**(B `03-横切设计原则/`):安全合规(数据分级/注入/人在环中/审计)、成本与 ROI(分层/熔断)、多 Agent 协作与人机协同、信任进化与隔离(提示即代码/可解释/灾备/租户隔离)。每节点 spec 须对照自检。
 - **评估门**:改 Prompt/工具/记忆/评估集 → 必跑 eval 回归,低于阈值阻断发布(`eval/阈值.md`);指标挂 L1/L2/L3 + 北极星。
@@ -37,4 +37,4 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 - `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段3-步骤6 | E1–E9 已签核(E1–E6 竖切离线自证✔) | <首样本定:迷你先行→37golden> | 劣化被拦次数(D-1)
 - 进度:阶段1/2 **业务方逐条签核 D-1..D-9(2026-09-10)** 定稿通过(见 `docs/decisions/定调复核-签核记录.md`);阶段3-步骤6 P3-1 首跑:`app/eval_gate/` E1–E7 竖切 + fastapi-rag 适配器 + CI 示例,`pytest` 47 passed(离线零外网);演示 good→exit0 / bad→exit1 被拦。真实被测已登记:`01.FastAPI RAG Agent`(chat 已 env 可配、切 DeepSeek,commit `36aa291`)。
 - **阶段门纪律**:gate-review 出建议、终裁 = 业务方签核(本指针/节点 ✔ 均以此为准,不再自评 PASS)。
-- **下一步**:接续锚 = ROADMAP「P3-1 余留待办」R1→R4(真实链路冒烟 → 37 golden 标定 → 观测左移 → 阶段3 门禁验收)。
+- **下一步**(明日续,⏸ 2026-09-10 收):接续锚 = ROADMAP「P3-1 余留待办」R1→R4。恢复动作:① 先跑 **grilling 定调压测门**(压测"是否现在做 R1 vs 先做离线项",本会话已中断待续);② 通过后做 **R1 真实链路冒烟**(需:你起被测服务 + 本仓 `.env` 填 `EVAL_JUDGE_*`/`EVAL_SUT_FASTAPI_*`/`EVAL_LIVE=1`)。
