@@ -73,7 +73,10 @@ class FastApiRagAdapter(SutAdapter):
     id = "fastapi-rag"
 
     def __init__(self, base_url: str | None = None, api_key: str | None = None,
-                 post: Callable | None = None, top_k: int = 3, mode: str = "accurate"):
+                 post: Callable | None = None, top_k: int = 3, mode: str = "accurate",
+                 quality: str | None = None):
+        # quality = 「被测 prompt 改好/改坏」旋钮,只有自证用被测 mini-rag-qa 有;
+        # 真实被测无此旋钮 → 接收并忽略(适配器对 E5 调度层保持同一签名)。
         self.base_url = (base_url or os.getenv("EVAL_SUT_FASTAPI_BASE_URL", "http://localhost:8000")).rstrip("/")
         self.api_key = api_key if api_key is not None else os.getenv("EVAL_SUT_FASTAPI_API_KEY", "")
         self.top_k = top_k

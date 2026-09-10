@@ -53,7 +53,9 @@ eval/
 
 首用规划:
 - **mini RAG-QA 自证**:自造 ~10 条(≥2 拒答负例 + ≥1 注入红队),先验工具与管线顺序。
-- **真实被测**:从 `01.FastAPI RAG Agent/archive/artifacts/eval_dataset.json`(37 golden,含拒答)转档,逐条标 `source`;其 RAGAS 历史基线(faithfulness 0.63/context_recall 0.76)作**参考横向**(来源标注),不作本门断言。
+- **真实被测**:✅ **已完成转档(R2a,2026-09-10)= `fastapi_rag_golden.evals.json`**(40 条 = 37 golden + 3 条自造对抗/越权)。来源 `01.FastAPI RAG Agent/archive/artifacts/eval_dataset.json`,`source` 的 `id` 为**数组下标(0 基)**;10 条拒答走 `must_refuse`,3 条对抗/越权走 `deterministic_only`(不进 judge);`answer_contains` 抽取规则见该文件 `_comment`。其 RAGAS 历史基线(faithfulness 0.63/context_recall 0.76)作**参考横向**(来源标注),不作本门断言。
+  - 离线预演(`tests/test_golden_rehearsal.py`):忠实被测 40/40 过、劣化被测被拦(红队命中 3 条)。
+  - 真实链路冒烟(R1)另需:被测服务在跑 + 契约 `评测-sut-adapter.md:42` 要求的 **golden 文档集 + seed 步骤**(否则检索结果不可复现)。
 
 ## 开始使用
 1. 阶段2-步骤4 起:每规划一个模块就为它建首批用例(意图/工具序列/答案)。

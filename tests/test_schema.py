@@ -3,6 +3,8 @@ import json
 
 import pytest
 
+from pathlib import Path
+
 from eval_gate.schema import SUPPORTED_SUTS, EvalError, load_evals
 
 
@@ -109,3 +111,18 @@ def test_schema_rejects_empty_expected_when_not_deterministic_only(tmp_path):
 def test_registered_suts_include_mini_rag_qa():
     assert "mini-rag-qa" in SUPPORTED_SUTS
     assert "fastapi-rag" in SUPPORTED_SUTS  # 契约 评测-evals-schema.md:26 的 sut 枚举
+
+
+GOLDEN = Path(__file__).resolve().parents[1] / "eval" / "fastapi_rag_golden.evals.json"
+
+
+def test_real_sut_golden_evalset_loads():
+    """R2a 转档产物必须可装载:37 条 golden + 3 条自造对抗(签核 D-10e)。"""
+    ev = load_evals(GOLDEN)
+    assert ev.sut_default == "fastapi-rag"
+    assert len(ev.cases) == 40
+    assert all(c.sut == "fastapi-rag" for c in ev.cases)
+    assert sum(1 for c in ev.cases if c.expected.must_refuse) == 13   # 10 拒答 + 3 对抗
+    det = [c for c in ev.cases if c.checks.deterministic_only]
+    assert [c.id for c in det] == [38, 39, 40], "红队/越权须走确定性引擎,不进 judge"
+    assert all(c.source for c in ev.cases), "转档须逐条标 source(可回溯)"
