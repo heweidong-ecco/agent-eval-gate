@@ -33,8 +33,14 @@ case "$fpath" in
   */tests/*|*/test_*|*_test.*) exit 0 ;;
 esac
 
-# 工作区/暂存区是否已有测试改动?
-cd "$(dirname "$0")/../.." 2>/dev/null || exit 0
+# 【F5 修复 · 2026-09-11】判据仓库 = **被编辑文件所在的仓库**,而不是 hook 脚本自身所在的仓库。
+#   缺陷现场:本 hook 匹配的是 `*/app/*`(**任意路径**),却 `cd` 到脚本自己那仓跑 `git diff`。
+#   后果:在**另一个检出 / 临时仓 / worktree** 里改实现 → 拿"自己那仓"的状态去判
+#   → 误判「没写测试」→ 弹 ask → **子 Agent 无人可批准,直接挂死**。
+#   (盲测 4 实测:Agent 停在该 Edit 上,transcript 留下 "The user doesn't want to proceed with this tool"。)
+#   不在任何 git 仓库里 → 无从判断,也不该打扰 → 放行。
+REPO=$(git -C "$(dirname "$fpath")" rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$REPO" 2>/dev/null || exit 0
 tst=$( { git diff --name-only HEAD -- '*/tests/*' 'tests/*' 2>/dev/null
          git diff --cached --name-only -- '*/tests/*' 'tests/*' 2>/dev/null; } | sort -u | wc -l | tr -d ' ')
 [ "$tst" -gt 0 ] && exit 0

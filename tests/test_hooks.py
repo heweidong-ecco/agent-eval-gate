@@ -133,6 +133,52 @@ def test_impl_guard_allows_non_impl_paths(path):
     assert r.stdout.strip() == "", f"{path} 不该被拦"
 
 
+def test_impl_guard_judges_by_edited_files_repo_not_its_own(tmp_path):
+    """**F5 回归**:判据仓库 = **被编辑文件所在的仓库**,不是 hook 脚本自己所在的仓库。
+
+    缺陷现场(2026-09-11 盲测4):
+      `impl-guard.sh` 匹配 `*/app/*`(**任意路径**),却 `cd` 到**脚本自身所在仓库**跑 `git diff`。
+      于是:在**另一个检出/临时仓**里改实现 → 它拿"自己那仓"的状态去判 → 误判「没写测试」→ 弹 ask
+      → **子 Agent 无人可批准 → 直接挂死**(实测:Agent 停在该 Edit 上,transcript 留下
+      "The user doesn't want to proceed with this tool")。
+    """
+    hook_repo = _tmp_repo()                      # hook 所在的仓:故意让它的 tests/ 有未提交改动
+    other = _tmp_repo()                          # 被编辑文件所在的仓:干净
+    try:
+        # hook_repo 的 tests/ 要有**已跟踪的未提交改动** —— 旧实现读它就会放行
+        _write(hook_repo, "tests/test_dummy.py", "x = 1\n")
+        subprocess.run(["git", "add", "-A"], cwd=hook_repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "init"], cwd=hook_repo,
+                       check=True, capture_output=True)
+        _write(hook_repo, "tests/test_dummy.py", "x = 2\n")
+        _write(other, "app/report.py")
+        subprocess.run(["git", "add", "-A"], cwd=other, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "init"], cwd=other, check=True, capture_output=True)
+
+        payload = json.dumps({"tool_name": "Edit",
+                              "tool_input": {"file_path": str(other / "app" / "report.py")}})
+        r = _run(hook_repo / ".claude" / "hooks" / "impl-guard.sh", payload,
+                 {"IMPL_GUARD": "1"}, cwd=hook_repo)
+        assert r.returncode == 0
+        d = json.loads(r.stdout)
+        assert d["hookSpecificOutput"]["permissionDecision"] == "ask", \
+            "读了 hook 自己那仓的状态 —— 跨仓编辑会被误判(并挂死子 Agent)"
+    finally:
+        shutil.rmtree(hook_repo, ignore_errors=True)
+        shutil.rmtree(other, ignore_errors=True)
+
+
+def test_impl_guard_silent_for_file_outside_any_repo(tmp_path):
+    """被编辑的文件不在任何 git 仓库里 → 不干预(无从判断,也不该打扰)。"""
+    plain = tmp_path / "plain" / "app"
+    plain.mkdir(parents=True)
+    (plain / "x.py").write_text("x = 1\n", encoding="utf-8")
+    payload = json.dumps({"tool_input": {"file_path": str(plain / "x.py")}})
+    r = _run(HOOKS / "impl-guard.sh", payload, {"IMPL_GUARD": "1"})
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""
+
+
 def test_impl_guard_silent_when_disabled():
     payload = json.dumps({"tool_input": {"file_path": str(ROOT / "app" / "x.py")}})
     r = _run(HOOKS / "impl-guard.sh", payload, {})
