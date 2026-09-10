@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,7 @@ ALL_HOOKS = {
     "skill-trace.sh": "SKILL_TRACE",
     "session-context.sh": "SESSION_CTX",
     "kb-drift-sentinel.sh": "KB_SENTINEL",
+    "subagent-guard.sh": "SUBAGENT_GUARD",
     "commit-msg": "（git hook，无 env 开关）",
 }
 
@@ -66,7 +68,7 @@ def test_hook_script_is_executable(name):
     assert os.access(p, os.X_OK), f"{name} 没有可执行位"
 
 
-@pytest.mark.parametrize("name,switch", [(k, v) for k, v in ALL_HOOKS.items() if v.startswith(("IMPL", "KIT", "FAILURE", "SKILL", "SESSION", "KB"))])
+@pytest.mark.parametrize("name,switch", [(k, v) for k, v in ALL_HOOKS.items() if v.startswith(("IMPL", "KIT", "FAILURE", "SKILL", "SESSION", "KB", "SUBAGENT"))])
 def test_hook_is_registered_in_settings(name, switch):
     """**没注册 = 形同不存在**(脚本再对也没人调)。"""
     text = _registered_commands()
@@ -311,6 +313,128 @@ def test_session_context_emits_valid_json_with_entry_trigger():
     ctx = d["hookSpecificOutput"]["additionalContext"]
     assert d["hookSpecificOutput"]["hookEventName"] == "SessionStart"
     assert "using-superpowers" in ctx, "注入内容缺入口触发器"
+
+
+# ── ② 该发的发:subagent-guard(SubagentStart,把纪律注入子 Agent)─────────────
+# 背景:子 Agent 拿不到锚点、不触发 SessionStart/Stop hook(盲测 1/2/3 实证)。
+#       `SubagentStart` 是**唯一能真正到达子 Agent** 的通道(2026-09-11 实机验证:
+#       注入以 system-reminder 形式进了子 Agent 上下文,类型 `hook_additional_context`)。
+# 判据只能按 `agent_type`,因为 SubagentStart **看不到任务 prompt**(GitHub #87411,
+# 本机实测 stdin 字段为 agent_id/agent_type/cwd/prompt_id/session_id/transcript_path)。
+
+SIGNATURE = "REPO-DISCIPLINE-V1"   # ASCII 锚点,供到达性探针 grep(中文签名会给 shell 添乱)
+
+
+def test_subagent_guard_injects_for_writable_type():
+    """可写型子 Agent → 输出合法 JSON,且 additionalContext 含版本签名。"""
+    r = _run(HOOKS / "subagent-guard.sh",
+             json.dumps({"agent_type": "general-purpose", "agent_id": "a1"}),
+             {"SUBAGENT_GUARD": "1"})
+    assert r.returncode == 0
+    d = json.loads(r.stdout)
+    ctx = d["hookSpecificOutput"]["additionalContext"]
+    assert d["hookSpecificOutput"]["hookEventName"] == "SubagentStart"
+    assert SIGNATURE in ctx, "注入内容缺版本签名(到达性探针的锚点)"
+
+
+@pytest.mark.parametrize("atype", ["Explore", "Plan", "claude-code-guide"])
+def test_subagent_guard_silent_for_readonly_types(atype):
+    """只读型 → **一个字都不发**(防噪音:它不改码、不提交,发了就是打扰)。"""
+    r = _run(HOOKS / "subagent-guard.sh", json.dumps({"agent_type": atype}),
+             {"SUBAGENT_GUARD": "1"})
+    assert r.returncode == 0
+    assert r.stdout.strip() == "", f"{atype} 是只读型,不该被注入"
+
+
+def test_subagent_guard_unknown_type_fails_safe():
+    """未知类型 → 默认**发**(fail-safe):宁可多发,不可漏发。"""
+    r = _run(HOOKS / "subagent-guard.sh", json.dumps({"agent_type": "some-new-agent"}),
+             {"SUBAGENT_GUARD": "1"})
+    assert SIGNATURE in r.stdout
+
+
+def test_subagent_guard_readonly_types_extendable():
+    """只读型集合可扩展,免得自定义的只读 agent 被无谓打扰。"""
+    r = _run(HOOKS / "subagent-guard.sh", json.dumps({"agent_type": "my-reader"}),
+             {"SUBAGENT_GUARD": "1", "SUBAGENT_GUARD_READONLY_TYPES": "my-reader"})
+    assert r.stdout.strip() == ""
+
+
+def test_subagent_guard_silent_when_disabled():
+    r = _run(HOOKS / "subagent-guard.sh",
+             json.dumps({"agent_type": "general-purpose"}), {})
+    assert r.returncode == 0 and r.stdout.strip() == ""
+
+
+def _mk_subagents(tmp_path: Path, n_with_sig: int, n_without: int) -> Path:
+    """造假的子 Agent transcript 目录结构,用于到达性断言的隔离测试。"""
+    proj = tmp_path / "proj" / "sess-1" / "subagents"
+    proj.mkdir(parents=True)
+    for i in range(n_with_sig):
+        (proj / f"agent-with{i}.jsonl").write_text(
+            '{"content":"…REPO-DISCIPLINE-V1…"}\n', encoding="utf-8")
+    for i in range(n_without):
+        (proj / f"agent-without{i}.jsonl").write_text(
+            '{"content":"普通子 Agent,没有任何注入"}\n', encoding="utf-8")
+    return tmp_path / "proj"
+
+
+def test_check_subagent_injection_ok_when_signature_present(tmp_path):
+    """有子 Agent 且含签名 → exit 0。"""
+    proj = _mk_subagents(tmp_path, n_with_sig=1, n_without=1)
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "check_subagent_injection.py"),
+                        "sess-1", "--projects-dir", str(proj)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_check_subagent_injection_flags_missing_signature(tmp_path):
+    """**结构失效**:有子 Agent transcript,却一份都不含签名 → exit 1。"""
+    proj = _mk_subagents(tmp_path, n_with_sig=0, n_without=2)
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "check_subagent_injection.py"),
+                        "sess-1", "--projects-dir", str(proj)],
+                       capture_output=True, text=True)
+    assert r.returncode == 1, "注入没到达却没报错 —— 这正是要防的静默失效"
+    assert "失效" in r.stdout or "失效" in r.stderr
+
+
+def test_check_subagent_injection_noop_when_no_subagents(tmp_path):
+    """本会话没派过子 Agent → 无可检,exit 0(不误报)。"""
+    proj = tmp_path / "proj" / "sess-1"
+    proj.mkdir(parents=True)
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "check_subagent_injection.py"),
+                        "sess-1", "--projects-dir", str(proj)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0
+    assert "无子 Agent" in r.stdout or "跳过" in r.stdout
+
+
+def _fake_session_with_subagents(tmp_path: Path, sid: str, with_sig: bool) -> Path:
+    """造 `<HOME>/.claude/projects/<sanitized-ROOT>/<sid>/subagents/` 结构。"""
+    proj = tmp_path / ".claude" / "projects" / str(ROOT).replace("/", "-") / sid / "subagents"
+    proj.mkdir(parents=True)
+    body = "有签名 REPO-DISCIPLINE-V1" if with_sig else "这个子 Agent 没收到任何注入"
+    (proj / "agent-a.jsonl").write_text(json.dumps({"content": body}) + "\n", encoding="utf-8")
+    return proj
+
+
+def test_skill_sentinel_warns_when_injection_missing(tmp_path):
+    """到达性:派过子 Agent 却一份签名都没有 → Stop 哨兵必须出声。
+
+    否则注入失效时**没有任何提示**,子 Agent 在无纪律工作而无人知 —— 与 F1 同型的静默失效。
+    """
+    _fake_session_with_subagents(tmp_path, "sess-x", with_sig=False)
+    r = _run(HOOKS / "skill-sentinel.sh", json.dumps({"session_id": "sess-x"}),
+             {"SKILL_SENTINEL": "1", "HOME": str(tmp_path)})
+    assert "注入未到达" in r.stdout, f"注入缺失却没提醒;stdout={r.stdout!r}"
+
+
+def test_skill_sentinel_silent_about_injection_when_arrived(tmp_path):
+    """注入到位 → 不该就这条发声(防噪音)。"""
+    _fake_session_with_subagents(tmp_path, "sess-y", with_sig=True)
+    r = _run(HOOKS / "skill-sentinel.sh", json.dumps({"session_id": "sess-y"}),
+             {"SKILL_SENTINEL": "1", "HOME": str(tmp_path)})
+    assert "注入未到达" not in r.stdout
 
 
 # ── ③ 不该拦的不拦:哨兵类在开关关闭时静默 ────────────────────────────────

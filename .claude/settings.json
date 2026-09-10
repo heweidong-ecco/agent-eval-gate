@@ -33,6 +33,16 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "SUBAGENT_GUARD=1 .claude/hooks/subagent-guard.sh"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

@@ -11,8 +11,25 @@
 [ "$SKILL_SENTINEL" = "1" ] || exit 0
 
 cd "$(dirname "$0")/../.." || exit 0
+ROOT="$PWD"
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
+payload=$(cat 2>/dev/null || true)
+
+# ---------- 到达性:纪律注入是否真的到了子 Agent ----------
+# 缘起(2026-09-11):`subagent-guard.sh`(SubagentStart)把纪律注入子 Agent,但**注入失效时
+# 不会有任何东西变红** —— 子 Agent 照常工作,只是没人告诉它纪律。与 F1(门 2 证据链被写坏)
+# 同型:机制的失效必须可被察觉。**判据 = 本会话派过子 Agent,却一份 transcript 都不含签名。**
+# 无子 Agent 时不提醒(不误报、不刷屏)。
+sid=$(printf '%s' "$payload" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+if [ -n "$sid" ]; then
+  py="$ROOT/.venv/bin/python"
+  [ -x "$py" ] || py=python3
+  "$py" "$ROOT/tools/check_subagent_injection.py" "$sid" >/dev/null 2>&1 || \
+    printf '⚠ 纪律注入未到达子 Agent(subagent-guard 可能已失效):本会话派过子 Agent 却无一含注入签名。\n'
+fi
+
+# ---------- 防漏:该用的 skill 都用了吗 ----------
 # 仅当工作区确实有改动(说明本轮做了事)才提醒,避免静默轮次刷屏
 git status --porcelain 2>/dev/null | grep -q . || exit 0
 
