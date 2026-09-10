@@ -1,6 +1,6 @@
 """E3 确定性规则引擎(contracts/评测-evals-schema expected 语义)。"""
 from eval_gate.schema import Case, Checks, Expected
-from eval_gate.rules import run_deterministic
+from eval_gate.rules import is_empty_answer, run_deterministic
 
 
 def case_with(**kw) -> Case:
@@ -57,3 +57,20 @@ def test_empty_expectations_pass_by_default():
     c = case_with(expected=Expected())
     r = run_deterministic(c, "任意输出")
     assert r.passed is True
+
+
+def test_is_empty_answer_true_for_blank_and_whitespace():
+    assert is_empty_answer("") is True
+    assert is_empty_answer("   ") is True
+    assert is_empty_answer("\n\t ") is True
+
+
+def test_is_empty_answer_false_for_non_blank_text():
+    assert is_empty_answer("有内容") is False
+    assert is_empty_answer("  x ") is False
+
+
+def test_is_empty_answer_true_for_non_string():
+    assert is_empty_answer(None) is True
+    assert is_empty_answer(123) is True
+    assert is_empty_answer(["a"]) is True

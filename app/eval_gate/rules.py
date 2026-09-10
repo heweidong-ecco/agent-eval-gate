@@ -48,3 +48,10 @@ def run_deterministic(case: Case, answer: str) -> RuleResult:
     if exp.answer_contains and not any(tok in answer for tok in exp.answer_contains):
         hits.append(f"未命中任一期望关键点: {exp.answer_contains}")
     return RuleResult(passed=not hits, hits=hits)
+
+
+def is_empty_answer(text) -> bool:
+    """空回答判定:非字符串(含 None/缺字段)或 strip 后为空 → True。"""
+    if not isinstance(text, str):
+        return True
+    return not text.strip()
