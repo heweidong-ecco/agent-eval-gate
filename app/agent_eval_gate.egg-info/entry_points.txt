@@ -1,2 +1,0 @@
-[console_scripts]
-eval-gate = eval_gate.cli:main

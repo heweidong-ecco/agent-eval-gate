@@ -33,3 +33,6 @@ scaffold/_generated/
 
 # 避坑库变动检测的状态文件(每台机器各自维护)
 .claude/.kb-avoid-manifest
+
+# Python 构建产物(pip install -e . 生成)
+*.egg-info/
