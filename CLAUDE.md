@@ -34,7 +34,9 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 ```
 
 ## 当前指针(随推进更新 — 上次更新 2026-09-10)
-- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段3-步骤6 | E1–E9 已签核(E1–E6 竖切离线自证✔) | <首样本定:迷你先行→37golden> | 劣化被拦次数(D-1)
-- 进度:阶段1/2 **业务方逐条签核 D-1..D-9(2026-09-10)** 定稿通过(见 `docs/decisions/定调复核-签核记录.md`);阶段3-步骤6 P3-1 首跑:`app/eval_gate/` E1–E7 竖切 + fastapi-rag 适配器 + CI 示例,`pytest` 47 passed(离线零外网);演示 good→exit0 / bad→exit1 被拦。真实被测已登记:`01.FastAPI RAG Agent`(chat 已 env 可配、切 DeepSeek,commit `36aa291`)。
+- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段3-步骤6 | E1–E9 已签核(E1–E6 竖切离线自证✔) | <首样本定:37golden → R2b 标定> | 劣化被拦次数(D-1)
+- 进度:阶段1/2 **业务方逐条签核 D-1..D-9(2026-09-10)**;阶段3 P3-1 首跑 `app/eval_gate/` E1–E7 竖切 + fastapi-rag 适配器 + CI 示例,`pytest` 47 passed(离线零外网),good→exit0 / bad→exit1 被拦。真实被测:`01.FastAPI RAG Agent`(切 DeepSeek,commit `36aa291`)。
+- **P3 收口顺序已签核(D-10a..D-10h,2026-09-10)** —— grilling 定调压测门通过后修订 D-9:顺序 = **R0 → R2a → R1 → R2b → R3 → R4**;R3 升级为 **R4 硬前置**;契约补丁三处。过程数据 `notes/grilling/P3-1优先级-2026-09-10.md`,签核 `docs/decisions/定调复核-签核记录.md`。
 - **阶段门纪律**:gate-review 出建议、终裁 = 业务方签核(本指针/节点 ✔ 均以此为准,不再自评 PASS)。
-- **下一步**(明日续,⏸ 2026-09-10 收):接续锚 = ROADMAP「P3-1 余留待办」R1→R4。恢复动作:① 先跑 **grilling 定调压测门**(压测"是否现在做 R1 vs 先做离线项",本会话已中断待续);② 通过后做 **R1 真实链路冒烟**(需:你起被测服务 + 本仓 `.env` 填 `EVAL_JUDGE_*`/`EVAL_SUT_FASTAPI_*`/`EVAL_LIVE=1`)。
+- **下一步**:接续锚 = ROADMAP「P3-1 余留待办」。① **R0**(韧性加固 + 契约补丁,验收 = 契约测试 + 离线故障注入)② **R2a**(37 golden 转档,纯离线)③ **R1**(真实链路冒烟,**需你的窗口**:起被测服务 + `.env`)。
+- **挂起项**:被测知识库有无文档(R1 开头探针自证);母体 Kit 缺陷观察项(证据 1/2,停观察态,不落本仓表)。
