@@ -57,7 +57,7 @@ def test_grade_second_attempt_succeeds():
 
 
 # ---- 本地 loopback HTTP:验证真实请求路径/鉴权头/响应解析 ----
-def _serve_verdict_json(content):
+def _serve_verdict_json(content, usage=None):
     captured = {}
 
     class Handler(BaseHTTPRequestHandler):
@@ -67,7 +67,10 @@ def _serve_verdict_json(content):
             captured["path"] = self.path
             captured["auth"] = self.headers.get("Authorization")
             captured["body"] = body
-            resp = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+            payload = {"choices": [{"message": {"content": content}}]}
+            if usage is not None:
+                payload["usage"] = usage
+            resp = json.dumps(payload).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(resp)))
@@ -130,3 +133,38 @@ def test_grade_ref_returns_agreement_fraction():
 def test_judge_enabled_flag():
     j = Judge(JudgeConfig(), chat=lambda m: "x")
     assert j.enabled() is False  # base_url/key/model 全空 = 离线
+
+
+# ---- judge 成本统计(契约 评测-judge.md:44 / L1「成本(judge token)」)----
+
+def test_usage_accumulates_from_tuple_chat():
+    def chat(_msgs):
+        return json.dumps({"verdict": "pass", "score": 1.0, "reasons": ["ok"]}), \
+            {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120}
+
+    j = Judge(JudgeConfig(), chat=chat)
+    j.grade(ITEM)
+    j.grade(ITEM)
+    assert j.usage == {"calls": 2, "prompt_tokens": 200,
+                       "completion_tokens": 40, "total_tokens": 240}
+
+
+def test_usage_from_http_response():
+    server, _ = _serve_verdict_json(
+        json.dumps({"verdict": "pass", "score": 1.0, "reasons": ["ok"]}),
+        usage={"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10})
+    try:
+        cfg = JudgeConfig(base_url=f"http://127.0.0.1:{server.server_address[1]}",
+                          api_key="sk-t", model="m")
+        j = Judge(cfg)
+        j.grade(ITEM)
+        assert j.usage["total_tokens"] == 10 and j.usage["calls"] == 1
+    finally:
+        server.shutdown()
+
+
+def test_usage_stays_zero_for_string_chat_stub():
+    """既有注入桩只返回 str → 用量保持 0,不得报错(向后兼容)。"""
+    j = Judge(JudgeConfig(), chat=lambda m: json.dumps({"verdict": "pass", "score": 1.0}))
+    j.grade(ITEM)
+    assert j.usage["calls"] == 0 and j.usage["total_tokens"] == 0

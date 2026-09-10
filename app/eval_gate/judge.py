@@ -49,8 +49,12 @@ class JudgeVerdict:
         }
 
 
-def _openai_chat_http(cfg: JudgeConfig, messages: list[dict]) -> str:
-    """OpenAI 兼容 chat completions 调用(纯标准库)。"""
+def _openai_chat_http(cfg: JudgeConfig, messages: list[dict]) -> tuple[str, dict]:
+    """OpenAI 兼容 chat completions 调用(纯标准库)。
+
+    返回 `(content, usage)`;`usage` 取响应里的 token 用量,供 L1「成本(judge token)」
+    与契约 `评测-judge.md:44`「记录字段(报告侧必存)」使用(缺失则为空 dict)。
+    """
     url = cfg.base_url.rstrip("/") + "/chat/completions"
     payload = json.dumps({
         "model": cfg.model,
@@ -76,7 +80,7 @@ def _openai_chat_http(cfg: JudgeConfig, messages: list[dict]) -> str:
         raise JudgeError("E_JUDGE_TIMEOUT", f"judge 不可用: HTTP {e.code}")
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise JudgeError("E_JUDGE_TIMEOUT", f"judge 不可达/超时: {e}")
-    return data["choices"][0]["message"]["content"]
+    return data["choices"][0]["message"]["content"], (data.get("usage") or {})
 
 
 def _parse_verdict(text: str) -> JudgeVerdict | None:
@@ -115,11 +119,34 @@ def build_item(case_id: int, question: str, expected: dict, sut_answer: str,
 
 
 class Judge:
-    """真实 judge:可配任意 OpenAI 兼容模型(默认读 EVAL_JUDGE_*)。"""
+    """真实 judge:可配任意 OpenAI 兼容模型(默认读 EVAL_JUDGE_*)。
+
+    记录 **judge 用量/成本**(`usage`)—— 契约 `评测-judge.md:44`「记录字段(报告侧必存)」
+    与 L1 指标「成本(judge token)」。
+    """
 
     def __init__(self, cfg: JudgeConfig | None = None, chat=None):
         self.cfg = cfg or judge_config()
         self._chat = chat or (lambda msgs: _openai_chat_http(self.cfg, msgs))
+        self.usage: dict[str, int] = {"calls": 0, "prompt_tokens": 0,
+                                      "completion_tokens": 0, "total_tokens": 0}
+
+    def _record_usage(self, usage: dict | None) -> None:
+        self.usage["calls"] += 1
+        for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            try:
+                self.usage[k] += int((usage or {}).get(k) or 0)
+            except (TypeError, ValueError):
+                pass
+
+    def _call_chat(self, msgs: list[dict]) -> str:
+        """调底层 chat。返回 `(content, usage)` 元组则累计用量;注入桩返回 str 亦可。"""
+        out = self._chat(msgs)
+        if isinstance(out, tuple):
+            content, usage = out
+            self._record_usage(usage)
+            return content
+        return out
 
     def enabled(self) -> bool:
         return self.cfg.enabled()
@@ -154,7 +181,7 @@ class Judge:
             msgs = self._messages(item)
             if attempt > 0:
                 msgs = msgs + [{"role": "user", "content": "上次不是合法 JSON,请只输出 JSON,不要任何其它文字。"}]
-            text = self._chat(msgs)
+            text = self._call_chat(msgs)
             verdict = _parse_verdict(text)
             if verdict is not None:
                 return verdict

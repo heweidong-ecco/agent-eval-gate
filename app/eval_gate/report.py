@@ -17,6 +17,8 @@ def write_run(result, outdir: str | Path, ev_path: str | Path, judge_label: str)
         "run_id": result.run_id,
         "evals_file": str(ev_path),
         "judge": judge_label,
+        # judge 成本(L1 / 契约 评测-judge.md:44「记录字段(报告侧必存)」)
+        "judge_usage": result.judge_usage,
         "summary": result.summary,
         "applied_thresholds": result.applied_thresholds,
         "blockers": result.blockers,

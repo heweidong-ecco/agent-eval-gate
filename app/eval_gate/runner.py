@@ -44,6 +44,7 @@ class RunResult:
     judge_label: str = "offline"
     degraded: bool = False
     degraded_reason: str | None = None
+    judge_usage: dict | None = None      # judge 成本(L1;契约 评测-judge.md:44)
 
 
 def default_thresholds() -> dict:
@@ -260,15 +261,17 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
         exit_code = 0
 
     judge_label = active_judge.label() if active_judge else "offline"
+    judge_usage = getattr(active_judge, "usage", None)
     if tracer is not None:
         # 汇总日志归属根 span(此时已退出上下文,故显式传 span_id,保链路可重建)
         tracer.log("warn" if (degraded or blockers) else "info", "run", "evaluate",
                    input={"evals_version": ev.version, "judge": judge_label},
                    output={**summary, "exit_code": exit_code, "degraded": degraded,
-                           "blockers": blockers},
+                           "blockers": blockers, "judge_usage": judge_usage},
                    status=STATUS_DEGRADED if degraded else (STATUS_ERROR if blockers else STATUS_OK),
                    span_id=root.span_id if root is not None else None)
     return RunResult(run_id=_run_id(ev, quality), summary=summary, cases=case_results,
                      exit_code=exit_code, blockers=blockers,
                      applied_thresholds=thr, judge_label=judge_label,
-                     degraded=degraded, degraded_reason=degraded_reason)
+                     degraded=degraded, degraded_reason=degraded_reason,
+                     judge_usage=judge_usage)
