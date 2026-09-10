@@ -12,10 +12,25 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 from eval_gate import mini_rag
+from eval_gate.rules import REFUSAL_LEXICON
 from eval_gate.schema import Case
+
+
+def load_snapshot(path: str | Path) -> dict[str, dict]:
+    """装载被测**快照**(question -> 行)。取法见 `总纲.md` D-5:「HTTP/快照/回放」。
+
+    快照 = 被测真实产出的事后回放(如 `eval/snapshots/*.json`),用于被测服务不可用
+    或检索结果不可复现时的离线真实数据评测(契约 `评测-sut-adapter.md:42`)。
+    """
+    p = Path(path)
+    rows = json.loads(p.read_text(encoding="utf-8"))
+    if not isinstance(rows, list):
+        raise ValueError(f"快照须为数组: {p}")
+    return {r["question"]: r for r in rows if isinstance(r, dict) and r.get("question")}
 
 
 class SutErrorCode(enum.Enum):
@@ -67,6 +82,8 @@ class FastApiRagAdapter(SutAdapter):
 
     - 配置:EVAL_SUT_FASTAPI_BASE_URL(默认 http://localhost:8000)/ EVAL_SUT_FASTAPI_API_KEY;
     - post 可注入(离线测试);真实实现走 urllib(POST JSON);
+    - **取法(D-5:HTTP/快照/回放)**:默认 HTTP;设 `EVAL_SUT_FASTAPI_SNAPSHOT=<快照文件>`
+      则改走**快照回放**(被测服务不在时用,见 `load_snapshot`);
     - 错误映射:E_SUT_AUTH/QUOTA/4XX/5XX/BAD_RESPONSE(contracts/评测-sut-adapter.md)。
     """
 
@@ -74,7 +91,7 @@ class FastApiRagAdapter(SutAdapter):
 
     def __init__(self, base_url: str | None = None, api_key: str | None = None,
                  post: Callable | None = None, top_k: int = 3, mode: str = "accurate",
-                 quality: str | None = None):
+                 quality: str | None = None, snapshot: str | Path | None = None):
         # quality = 「被测 prompt 改好/改坏」旋钮,只有自证用被测 mini-rag-qa 有;
         # 真实被测无此旋钮 → 接收并忽略(适配器对 E5 调度层保持同一签名)。
         self.base_url = (base_url or os.getenv("EVAL_SUT_FASTAPI_BASE_URL", "http://localhost:8000")).rstrip("/")
@@ -82,6 +99,33 @@ class FastApiRagAdapter(SutAdapter):
         self.top_k = top_k
         self.mode = mode
         self._post = post or self._default_post
+        snap = snapshot if snapshot is not None else os.getenv("EVAL_SUT_FASTAPI_SNAPSHOT")
+        self._snapshot_path = Path(snap) if snap else None
+        self._snapshot = load_snapshot(snap) if snap else None
+
+    def _from_snapshot(self, case: Case) -> SutOutput:
+        """快照回放:按问题取被测**当时真实回答**。
+
+        快照未覆盖该问题时**记 fail 而非放行** —— 缺证据不放行,与契约 exit 3
+        「不假装全绿」同一精神(理由里写明「快照未覆盖」,便于 R2b 剔除该口径)。
+        """
+        row = self._snapshot.get(case.input["question"])
+        if row is None:
+            raise SutAdapterError(
+                SutErrorCode.E_SUT_BAD_RESPONSE,
+                f"快照未覆盖该问题({self._snapshot_path}):缺证据不放行",
+            )
+        answer = (row.get("actual_answer") or "").strip()
+        if not answer:
+            raise SutAdapterError(SutErrorCode.E_SUT_BAD_RESPONSE, "快照该条无 actual_answer")
+        docs = row.get("retrieved_docs") or []
+        return SutOutput(
+            answer=answer,
+            refused=any(tok in answer for tok in REFUSAL_LEXICON),
+            sources=[f"snapshot:doc{i}" for i in range(len(docs))],
+            raw=row,
+            meta={"sut": self.id, "source": "snapshot", "snapshot": str(self._snapshot_path)},
+        )
 
     def _default_post(self, url: str, headers: dict, payload: dict) -> tuple[int, dict]:
         body = json.dumps(payload).encode("utf-8")
@@ -99,6 +143,8 @@ class FastApiRagAdapter(SutAdapter):
             raise SutAdapterError(SutErrorCode.E_SUT_TIMEOUT, f"被测不可达: {e}")
 
     def run_case(self, case: Case) -> SutOutput:
+        if self._snapshot is not None:
+            return self._from_snapshot(case)
         url = f"{self.base_url}/api/v1/rag/search?mode={self.mode}"
         # 契约 contracts/评测-sut-adapter.md:39「header 鉴权(X-API-Key 或 JWT)」;
         # 被测把 Authorization: Bearer 一律按 JWT 验签,API Key 必须走 X-API-Key(R0 纠错)。
