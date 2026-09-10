@@ -47,5 +47,6 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 - **R2b 遗留已清**:① ~~阈值未接线~~ → ✅ 已修(机读 `eval/阈值.json` + `default_thresholds()` 优先读,**缺配置回落更严兜底**,契约测试守住);② 基线单轮波动 **7.5pp**(0.85/0.90/0.925),`eval/README.md:24` 的 N 次 A/B + p-value **仍未做** → 阈值只能作 v1 粗门(不阻塞 R4,但判不了微小退化)。
 - **R4 前收口的两条(本轮补完)**:**#3 重试退避** ✅(`E_SUT_TIMEOUT`/`5XX`→指数退避≤2、`429`→限速退避、其余 4xx→fail-fast;judge 超时重试 1 次;参数按 R1b 实测延迟定 1s 基数)/ **#7 P3-2 存储策略** ✅(`docs/specs/P3-2-存储策略.md`:逐项判「落地/不适用」并给依据)。**B 阶段3 门禁 7 条现已全部可判**。
 - **环境备查**:被测本地运行需 `/tmp/sut-run` 脚手架 + `/tmp/sut-lite-venv`;`rag-api` 容器已被停(它崩溃重启 304 次且抢 8000 端口),恢复命令 `docker start rag-api`。
+- **模型名(2026-09-10 迁移)**:DeepSeek 官方 **2026-07-24 起停用 `deepseek-chat` / `deepseek-reasoner`**,现行为 **`deepseek-v4-flash` / `deepseek-v4-pro`**。本仓 `.env`(`EVAL_JUDGE_MODEL`)与**被测 `.env`**(`LLM_MODEL_FAST`/`LLM_MODEL_CHAT`)均已迁到 `deepseek-v4-flash` 并实测通过。⚠️ 该网关**不校验模型名**(任意名都返 200),故「能调通」不代表名字有效 —— 以官方文档为准。
 - **待业务方在 R2b 复核**:idx26「Python 适合哪些人学习?」标准答案含「文档未明确说明」,是半拒答;以及 id12/14 类「golden 期望超出语料本身」的条目是否保留。
 - **挂起项**:被测知识库有无文档(R1 开头探针自证);母体 Kit 缺陷观察项(证据 1/2,停观察态,不落本仓表)。
