@@ -60,19 +60,29 @@ jobs:
       - name: skill 覆盖检查(装了 skill 必须登记到路由/锚点表;母体 KD-9)
         run: ./tools/check-skill-coverage.sh .claude/skills -- CLAUDE.md
 
-      - name: TDD 痕迹检查(改 app/ 但未改 tests/ → 警告)
+      - name: TDD 痕迹检查(改实现代码但未改测试 → 失败;可用 [no-test] 显式豁免)
+        # 依据:母体 KD-9。**硬门**:失败而非 warning —— 提示会被忽略,只有红灯不会。
+        # 豁免是**显式**的(提交信息含 [no-test]),必须付出"写一句理由"的成本,不能无声跳过。
         if: github.event_name == 'pull_request' || github.event.before != '0000000000000000000000000000000000000000'
         run: |
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
           CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || true)
-          app=$(echo "$CHANGED" | grep -cE '^app/.*\.py$' || true)
-          tst=$(echo "$CHANGED" | grep -cE '^tests/.*\.py$' || true)
-          if [ "$app" -gt 0 ] && [ "$tst" -eq 0 ]; then
-            echo "::warning::改了 $app 个 app/ 下的 .py,但未改任何 tests/ —— TDD 痕迹缺失(KD-9)。"
-            echo "::warning::请确认是否走了 test-driven-development;若确为纯重构/配置改动,请在 PR 描述里说明。"
-          else
-            echo "✅ TDD 痕迹检查通过(app 改动 $app / tests 改动 $tst)"
+
+          # 显式豁免:区间内任一提交信息含 [no-test](纯重构/配置改动)
+          if git log --format=%B "$BASE"..HEAD 2>/dev/null | grep -q '\[no-test\]'; then
+            echo "✅ TDD 痕迹检查:已用 [no-test] 显式豁免"
+            exit 0
           fi
+
+          SRC=$(echo "$CHANGED" | grep -cE '^(app|backend|src)/.*\.(py|ts|js)$' || true)
+          TST=$(echo "$CHANGED" | grep -cE '(^|/)tests?/.*\.(py|ts|js)$' || true)
+          if [ "$SRC" -gt 0 ] && [ "$TST" -eq 0 ]; then
+            echo "::error::改了 $SRC 个实现文件,但未改任何测试 —— TDD 痕迹缺失(母体 KD-9)。"
+            echo "::error::请走 test-driven-development(先写测试);若确为纯重构/配置改动,"
+            echo "::error::请在提交信息里加 [no-test] 并说明理由(显式豁免,不允许无声跳过)。"
+            exit 1
+          fi
+          echo "✅ TDD 痕迹检查通过(实现 $SRC / 测试 $TST)"
 
       # 真实被测/真 judge 冒烟:配置密钥后放开(EVAL_LIVE=1)
       # - name: 真实冒烟(需密钥)

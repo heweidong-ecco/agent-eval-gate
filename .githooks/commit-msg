@@ -1,0 +1,44 @@
+#!/bin/sh
+# commit-msg:TDD 痕迹**本地硬门**(提交时就拦,比 CI 早一步)。
+#
+# 依据:母体 KD-9 ——「skills 装了却从不调用」的根因是缺触发与硬门。
+#   本 hook 是「写码不走 test-driven-development」这一条**唯一可机器检测**的痕迹
+#   (代理指标:改实现却没改测试)。它是弱代理,但属于"躲不掉"那一类。
+#
+# 启用(每仓一次):git config core.hooksPath .githooks
+# 豁免(必须显式):提交信息里加 [no-test] 并说明理由(纯重构/配置改动)
+# 强跳过(不推荐):git commit --no-verify —— 请在 PR/提交里说明为何绕过
+#
+# 参数:$1 = 本次提交信息文件路径(git 传给 commit-msg hook)
+
+msgfile="${1:-}"
+if [ -n "$msgfile" ] && [ -f "$msgfile" ] && grep -q '\[no-test\]' "$msgfile" 2>/dev/null; then
+  exit 0
+fi
+
+# 暂存区(本次真正要提交的文件),排除删除
+CHANGED=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
+
+SRC=$(printf '%s\n' "$CHANGED" | grep -cE '^(app|backend|src)/.*\.(py|ts|js)$' || true)
+TST=$(printf '%s\n' "$CHANGED" | grep -cE '(^|/)tests?/.*\.(py|ts|js)$' || true)
+
+if [ "$SRC" -gt 0 ] && [ "$TST" -eq 0 ]; then
+  cat >&2 <<EOF
+
+✗ TDD 痕迹检查未通过(母体 KD-9)
+
+  本次暂存了 $SRC 个实现文件,但没有改任何测试:
+$(printf '%s\n' "$CHANGED" | grep -E '^(app|backend|src)/.*\.(py|ts|js)$' | sed 's/^/    /')
+
+  请二选一:
+    1) 先写测试 —— 调用 test-driven-development skill 再提交;
+    2) 若确为纯重构/配置改动,在提交信息里加 [no-test] 并说明理由,例如:
+         git commit -m "refactor: 提取公共函数 [no-test]
+
+         [no-test] 纯重命名,行为不变,无需新增测试"
+
+  (绕过:git commit --no-verify —— 请说明为何绕过)
+EOF
+  exit 1
+fi
+exit 0
