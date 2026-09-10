@@ -57,6 +57,9 @@ jobs:
             echo "✅ 本次未改动评测集/阈值,跳过"
           fi
 
+      - name: skill 覆盖检查(装了 skill 必须登记到路由/锚点表;母体 KD-9)
+        run: ./tools/check-skill-coverage.sh .claude/skills -- CLAUDE.md
+
       - name: TDD 痕迹检查(改 app/ 但未改 tests/ → 警告)
         if: github.event_name == 'pull_request' || github.event.before != '0000000000000000000000000000000000000000'
         run: |
