@@ -47,8 +47,8 @@
 
 ## 目录(Agent 程序壳)
 ```
-需求基线.md · 总纲.md · ROADMAP.md · CLAUDE.md       # 排版层(事实源/架构/执行图/接续锚)
-docs/RUNBOOK.md · docs/decisions/ · docs/复盘/        # 流程(指 B)+ 决策 + **过程错误复盘**(我方错误)
+README.md · 需求基线.md · 总纲.md · ROADMAP.md · CLAUDE.md   # 对外说明(API 文档)+ 事实源/架构/执行图/接续锚
+docs/RUNBOOK.md · docs/部署.md · docs/decisions/ · docs/复盘/ · docs/specs/   # 流程(指 B)+ 部署配置 + 决策 + 过程错误复盘 + 节点设计
 contracts/ · templates/                              # 契约(工具/MCP/消息协议)与 spec 模板
 eval/ · eval/cases/ · observability/ · 飞轮/          # 评估门 / **失败回灌用例库** / 观测 / 数据飞轮
 app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
