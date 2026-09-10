@@ -9,13 +9,13 @@
 
 - `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:`main | 阶段3-步骤6 | E1–E9 已签核(E1–E6 竖切离线自证✔) | <首样本定:37golden → R2b 标定> | 劣化被拦次数(D-1 签核)>`
 - **定调**:阶段1/2 已由业务方逐条签核(D-1..D-9,2026-09-10);**P3 收口顺序已由 D-10a..D-10h 签核**(2026-09-10,grilling 定调压测门通过后,见 `docs/decisions/定调复核-签核记录.md`)。
-- **下一步**:见下方「P3-1 余留待办」—— **R0 → R2a → R1 → R2b → R3 → R4**(D-10a 修订序,替代 D-9 的「从 R1 继续」)。
+- **下一步**:见下方「P3-1 余留待办」—— **R0 ✅ → R2a ✅ → R1(⏸ 需业务方窗口)→ R2b → R3 → R4**(D-10a 修订序)。**R1 恢复动作**:业务方起被测服务(`docker compose up -d`,需 `DASHSCOPE_API_KEY` 等)+ 有效被测 API key → 先跑知识库探针 → 配 `.env` → 以 admin 身份跑 `eval/fastapi_rag_golden.evals.json`。
 
 ### P3-1 余留待办(按 D-10a 修订序推进 · 2026-09-10)
 > 顺序依据:grilling 定调压测门(过程数据 `notes/grilling/P3-1优先级-2026-09-10.md`)+ 签核 D-10a..D-10h。完成项打 ☑。
 
-- [ ] **R0 最小韧性加固 + 契约补丁**(D-10b/c/d):①judge 异常捕获 → 该 case 记 fail + 错误码,run **不崩**(`runner.py:71→123`→`cli.py:67` 现为三层无捕获);②`E_SUT_QUOTA` → 整批 aborted + **exit 3**;③契约补两空洞(`contracts/评测-report.md` exit 3 触发谓词 + degraded 承载字段);④`report.py:19` 的 `sut_quality` 对齐契约;⑤`adapters.py:100` 鉴权头 `Bearer` → **`X-API-Key`**(契约 `评测-sut-adapter.md:39` 本已如此规定,属实现纠错)。**验收 = 契约测试 + 离线故障注入**(judge 指向不可达端点,全程离线无密钥)。
-- [ ] **R2a 转档 37 golden + 补对抗样本**(D-10e):从被测 `archive/artifacts/eval_dataset.json`(37 条,扁平 `question`/`relevant_doc`/`answer`)**转档** → `module:"rag"`;27 条域内抽 **2–4 个同义候选** `answer_contains`(只抽核心实体/属性,不抽修饰词)+ `answer_not_contains`;10 条拒答 `must_refuse:true` 且**不标** `deterministic_only`(否则 `runner.py:120` 会把「未拒答」误记 `redteam_hits`);`source` 按 `eval/README.md:49` 约定;另补 **2 条注入 + 1 条越权隐私**(越权走确定性)。**纯离线**。
+- [x] **R0 最小韧性加固 + 契约补丁**(D-10b/c/d)— ✅ `3ef5439`:judge 异常不再崩进程(新增 `JudgeError` + 契约错误码分类);`E_SUT_QUOTA` → 整批 aborted + **exit 3**(degraded 时阈值判定作废);契约补 exit 3 触发谓词 + degraded 字段;删实现自加的 `sut_quality`;`adapters.py:100` 鉴权头改 **`X-API-Key`**。**另修复 2 处未预期的阻断级缺陷**:⑥`schema.py` 的 `SUPPORTED_SUTS` 补 `fastapi-rag`(原缺失 → 真实被测评测集 `E_UNKNOWN_SUT` 装不进);⑦`FastApiRagAdapter` 缺 `quality` 形参(原 TypeError 被吞 → **R1 会 40 条全挂**)。**验收 = 契约测试 + CLI 级离线故障注入**(judge 与被测端点均不可达 → 不崩、逐条记 fail、exit 1)。
+- [x] **R2a 转档 37 golden + 补对抗样本**(D-10e)— ✅ `a740936`:`eval/fastapi_rag_golden.evals.json` 40 条(37 golden + 2 注入 + 1 越权);27 条域内同义候选 `answer_contains`;10 条拒答 `must_refuse` 且不标 `deterministic_only`;`source` 按数组下标 0 基。离线预演:忠实 40/40 过、劣化被拦(红队命中 3)。**待业务方 R2b 复核 1 条语义存疑样本**(idx26)。
 - [ ] **R1 真实链路冒烟**(需你的窗口,D-10f):起 `01.FastAPI RAG Agent`(`/Users/heweidong/Desktop/ai-learning/重点教学内容/01.FastAPI RAG Agent`;`docker compose up -d`,需 `DASHSCOPE_API_KEY`/`JWT_SECRET_KEY`/`API_KEY`/`POSTGRES_PASSWORD`)→ **先探针确认知识库有文档**(无 `answer` 即停下找业务方)→ 本仓 `.env` 配 `EVAL_JUDGE_*` + `EVAL_SUT_FASTAPI_BASE_URL` + `EVAL_SUT_FASTAPI_API_KEY`(用 **admin** 身份)+ `EVAL_LIVE=1` → 跑**完整评测集** → `eval/runs/` 报告 + **脱敏摘要入库**。
 - [ ] **R2b 真实首样本标定**(需真 judge):用 R1 产物标定**北极星/L1/L2/L3 阈值**,回填 `eval/阈值.md`(现全表占位)与 `总纲.md` §4(替换占位)。
 - [ ] **R3 观测/trace 左移(E9)** —— **R4 的硬前置**(D-10g):结构化日志 + trace_id 贯穿 + Trace 视图;观测**字段由 R1/R2 真实数据确定**(不拍脑袋);落地 `observability/` 模板(现仅 5 个模板文件)。B 门禁 `04-阶段3:46,48,49` 三条依赖它。
