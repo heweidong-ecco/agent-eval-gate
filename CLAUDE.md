@@ -34,7 +34,7 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 ```
 
 ## 当前指针(随推进更新 — 上次更新 2026-09-10)
-- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:main | 阶段3-步骤6 | E1–E9 已签核(E1–E6 竖切离线自证✔) | <首样本定:37golden → R2b 标定> | 劣化被拦次数(D-1)
+- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:`main | 阶段3 ✅ 收口(业务方判 PASS,D-11)→ 阶段4-步骤8 | E1–E9 已实现 | L2 任务完成率 ≥0.80(基线 0.85–0.925) | 劣化被拦次数 = 1`
 - 进度:阶段1/2 **业务方逐条签核 D-1..D-9(2026-09-10)**;阶段3 P3-1 首跑 `app/eval_gate/` E1–E7 竖切 + fastapi-rag 适配器 + CI 示例,`pytest` 47 passed(离线零外网),good→exit0 / bad→exit1 被拦。真实被测:`01.FastAPI RAG Agent`(切 DeepSeek,commit `36aa291`)。
 - **P3 收口顺序已签核(D-10a..D-10h,2026-09-10)** —— grilling 定调压测门通过后修订 D-9:顺序 = **R0 → R2a → R1 → R2b → R3 → R4**;R3 升级为 **R4 硬前置**;契约补丁三处。过程数据 `notes/grilling/P3-1优先级-2026-09-10.md`,签核 `docs/decisions/定调复核-签核记录.md`。
 - **阶段门纪律**:gate-review 出建议、终裁 = 业务方签核(本指针/节点 ✔ 均以此为准,不再自评 PASS)。
@@ -43,7 +43,7 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 - **被测运行方式(关键,零改动)**:被测仓库 **`36aa291` 未改一行**;本机 `python3.10` venv `/tmp/sut-lite-venv` + 启动器 `/tmp/sut_run.py`(前置 `/tmp/sut-shim` 假模块 `gradio`/`cost_dashboard`/`api_v1_agent`,并把 langchain 1.x 迁走的 legacy agent API 从 `langchain_classic` 补回)。**不设 `DOCKER_ENV`** → 自动连 localhost 的 postgres/redis 容器。
 - **踩过的坑(已修,记在 `.env` / `.env.example`)**:① 被测 `localhost` 会解析到 IPv6 打到 Docker 的崩溃容器 → 改 **`127.0.0.1`**;② 本机 TLS 拦截,venv 默认 CA 不含其 CA → 设 **`SSL_CERT_FILE=/etc/ssl/cert.pem`**(备选:certifi 的 cacert.pem);③ pip 装 `cryptography` 需 `--prefer-binary`(Intel Mac 无 arm64 wheel 会退化成源码编译,而本机无 Rust)。
 - **进度(2026-09-10 续)**:**R2b 已标定**(`eval/阈值.md` + `总纲.md` §4 全填真实值;北极星基线 = **1**,由劣化演示取得 —— 改被测拒答指令 → 红队突破 2 → 被 `redteam_zero`+`l2` 拦下,被测已还原)。**首次 exit 0**:复跑 37/40(0.925)。
-- **下一步**:**R4 阶段3 门禁验收(业务方判 PASS)**;R4 前建议先补 **阈值接线**(见下)。
+- **下一步(阶段4-步骤8:模块测试/压测/红队)**:① `eval/README.md:24` 的 **N 次 A/B + p-value**(当前阈值只能判大退化);② 覆盖率达标 + 端到端/回放;③ 压测出 **L1 基线**(QPS/P99/错误率)。起点见 B `04-阶段4-测试验证-v1.0.md`。
 - **R2b 遗留已清**:① ~~阈值未接线~~ → ✅ 已修(机读 `eval/阈值.json` + `default_thresholds()` 优先读,**缺配置回落更严兜底**,契约测试守住);② 基线单轮波动 **7.5pp**(0.85/0.90/0.925),`eval/README.md:24` 的 N 次 A/B + p-value **仍未做** → 阈值只能作 v1 粗门(不阻塞 R4,但判不了微小退化)。
 - **R4 前收口的两条(本轮补完)**:**#3 重试退避** ✅(`E_SUT_TIMEOUT`/`5XX`→指数退避≤2、`429`→限速退避、其余 4xx→fail-fast;judge 超时重试 1 次;参数按 R1b 实测延迟定 1s 基数)/ **#7 P3-2 存储策略** ✅(`docs/specs/P3-2-存储策略.md`:逐项判「落地/不适用」并给依据)。**B 阶段3 门禁 7 条现已全部可判**。
 - **环境备查**:被测本地运行需 `/tmp/sut-run` 脚手架 + `/tmp/sut-lite-venv`;`rag-api` 容器已被停(它崩溃重启 304 次且抢 8000 端口),恢复命令 `docker start rag-api`。
