@@ -155,6 +155,7 @@ def _tmp_repo() -> Path:
     (d / "tests").mkdir()
     (d / "docs").mkdir()
     shutil.copy2(GITHOOKS / "commit-msg", d / ".githooks" / "commit-msg")
+    shutil.copy2(GITHOOKS / "post-commit", d / ".githooks" / "post-commit")
     shutil.copy2(HOOKS / "impl-guard.sh", d / ".claude" / "hooks" / "impl-guard.sh")
     subprocess.run(["git", "init", "-q"], cwd=d, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "t@t"], cwd=d, check=True, capture_output=True)
@@ -186,7 +187,26 @@ def test_commit_msg_gate1_blocks_impl_without_tests():
         shutil.rmtree(d, ignore_errors=True)
 
 
-def test_commit_msg_gate1_allows_with_no_test_marker():
+def test_commit_msg_gate1_allows_with_reason_marker():
+    """豁免**必须带理由**(`[no-test: <理由>]`)才放行。"""
+    d = _tmp_repo()
+    try:
+        _write(d, "app/a.py")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+        r = subprocess.run(["sh", str(d / ".githooks" / "commit-msg"),
+                            str(_msg(d, "refactor: x [no-test: 纯重命名,无行为变化]\n"))],
+                           cwd=d, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_commit_msg_gate1_rejects_bare_no_test_marker():
+    """**裸 `[no-test]` 不再放行**。
+
+    反面现状:文案写「加 [no-test] 并说明理由」,实现却只 `grep -q '[no-test]'` ——
+    **理由从未被检查**,裸标记即可绕过。豁免率因此完全不可见。
+    """
     d = _tmp_repo()
     try:
         _write(d, "app/a.py")
@@ -194,7 +214,8 @@ def test_commit_msg_gate1_allows_with_no_test_marker():
         r = subprocess.run(["sh", str(d / ".githooks" / "commit-msg"),
                             str(_msg(d, "refactor: x [no-test]\n"))],
                            cwd=d, capture_output=True, text=True)
-        assert r.returncode == 0
+        assert r.returncode == 1, "裸标记竟被放行 —— 豁免无痕可绕"
+        assert "理由" in r.stderr
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -218,7 +239,24 @@ def test_commit_msg_gate2_blocks_when_tdd_skill_absent():
         shutil.rmtree(d, ignore_errors=True)
 
 
-def test_commit_msg_gate2_allows_with_no_skill_marker():
+def test_commit_msg_gate2_allows_with_reason_marker():
+    d = _tmp_repo()
+    try:
+        _write(d, "app/a.py")
+        _write(d, "tests/test_a.py")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+        (d / ".claude" / "traces" / "latest.json").write_text(
+            json.dumps({"session_id": "s", "skills": "grilling(1)"}), encoding="utf-8")
+        r = subprocess.run(["sh", str(d / ".githooks" / "commit-msg"),
+                            str(_msg(d, "feat: x [no-skill: 纯配置改动,无实现逻辑]\n"))],
+                           cwd=d, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_commit_msg_gate2_rejects_bare_no_skill_marker():
+    """裸 `[no-skill]` 不再放行(门 2 原先见它直接 exit 0,连理由都不看)。"""
     d = _tmp_repo()
     try:
         _write(d, "app/a.py")
@@ -229,7 +267,7 @@ def test_commit_msg_gate2_allows_with_no_skill_marker():
         r = subprocess.run(["sh", str(d / ".githooks" / "commit-msg"),
                             str(_msg(d, "feat: x [no-skill]\n"))],
                            cwd=d, capture_output=True, text=True)
-        assert r.returncode == 0
+        assert r.returncode == 1, "裸 [no-skill] 仍被放行"
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -379,6 +417,171 @@ def _mk_subagents(tmp_path: Path, n_with_sig: int, n_without: int) -> Path:
     return tmp_path / "proj"
 
 
+# ── ② 绕过留痕:post-commit(不受 --no-verify 抑制)──────────────────────────
+# 背景:门上写着"可 --no-verify 绕过但须说明",而**绕过本身没有任何痕迹**。
+#      `man githooks` 明示 commit-msg 可被 --no-verify 绕过,而 `post-commit`
+#      不在被抑制之列 → 它是**绕过之后的必经之路**,由它留痕。
+
+def _commit_bypassing_hooks(d: Path, msg: str):
+    """在临时仓造一个「绕过门禁」的提交(等价于 git commit --no-verify)。"""
+    subprocess.run(["git", "commit", "--no-verify", "-q", "-m", msg],
+                   cwd=d, check=True, capture_output=True)
+
+
+def _bypass_records(d: Path) -> list:
+    log = d / ".claude" / "traces" / "bypass.jsonl"
+    if not log.is_file():
+        return []
+    return [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines() if x.strip()]
+
+
+def test_post_commit_logs_bypass_when_gate1_should_have_blocked():
+    """本应被门 1 拦下的提交被绕过了 → 必须留痕。"""
+    d = _tmp_repo()
+    try:
+        _write(d, "app/a.py")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+        _commit_bypassing_hooks(d, "feat: 改了实现没改测试")
+        r = subprocess.run(["sh", str(d / ".githooks" / "post-commit")], cwd=d,
+                           capture_output=True, text=True)
+        assert r.returncode == 0, "post-commit 永远不该阻断"
+        recs = _bypass_records(d)
+        assert any(x.get("gate") == "gate1" for x in recs), f"绕过没有留痕: {recs}"
+        assert any("at" in x and "sha" in x for x in recs)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_post_commit_silent_when_commit_is_clean():
+    """合规提交 → 不留痕(否则日志被噪音淹没)。"""
+    d = _tmp_repo()
+    try:
+        _write(d, "app/a.py")
+        _write(d, "tests/test_a.py")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+        _commit_bypassing_hooks(d, "feat: 实现 + 测试")
+        subprocess.run(["sh", str(d / ".githooks" / "post-commit")], cwd=d,
+                       capture_output=True, text=True)
+        assert _bypass_records(d) == [], "合规提交不该被记成绕过"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_post_commit_respects_exemption_with_reason():
+    """带理由的豁免是**设计意图**,不是绕过 → 不留痕。"""
+    d = _tmp_repo()
+    try:
+        _write(d, "app/a.py")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+        _commit_bypassing_hooks(d, "refactor: x [no-test: 纯重命名,无行为变化]")
+        subprocess.run(["sh", str(d / ".githooks" / "post-commit")], cwd=d,
+                       capture_output=True, text=True)
+        assert _bypass_records(d) == [], "合法豁免被误记成绕过"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_post_commit_always_exits_zero_even_without_commits():
+    """空仓库(无 HEAD)→ 仍 exit 0,不阻断、不报错。"""
+    d = _tmp_repo()
+    try:
+        r = subprocess.run(["sh", str(d / ".githooks" / "post-commit")], cwd=d,
+                           capture_output=True, text=True)
+        assert r.returncode == 0
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+# ── ② 绕过重算:check_gate_bypass(CI 侧,--no-verify 绕不过)──────────────────
+# post-commit 是**本机**留痕,改 core.hooksPath 就能失效;而 CI 从 git 历史**重算**
+# 门 1 的判据(逐提交可重放),是 `--no-verify` 在结构上绕不过的那一层。
+
+def _git(d: Path, *args: str):
+    subprocess.run(["git", *args], cwd=d, check=True, capture_output=True)
+
+
+def _commit(d: Path, msg: str):
+    _git(d, "add", "-A")
+    _git(d, "commit", "--no-verify", "-q", "-m", msg)
+
+
+def _head(d: Path) -> str:
+    r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=d, capture_output=True, text=True)
+    return r.stdout.strip()
+
+
+def _run_bypass_check(d: Path, base: str):
+    return subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "check_gate_bypass.py"), base, "--repo", str(d)],
+        capture_output=True, text=True)
+
+
+def test_gate_bypass_check_flags_bypassed_commit():
+    """历史里有「改实现无测试」的提交 → exit 1 并列出 sha。"""
+    d = _tmp_repo()
+    try:
+        _write(d, "app/a.py")
+        _write(d, "tests/test_a.py")
+        _commit(d, "feat: 初始实现与测试")
+        base = _head(d)
+        _write(d, "app/b.py")                      # 改实现,不碰测试
+        _commit(d, "feat: 偷偷改实现")
+        r = _run_bypass_check(d, base)
+        assert r.returncode == 1, f"绕过的提交没被抓: {r.stdout}{r.stderr}"
+        assert _head(d)[:7] in (r.stdout + r.stderr)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_gate_bypass_check_allows_reasoned_exemption():
+    """带理由的豁免是设计意图 → 不算绕过。"""
+    d = _tmp_repo()
+    try:
+        _write(d, "app/a.py")
+        _write(d, "tests/test_a.py")
+        _commit(d, "feat: 初始实现与测试")
+        base = _head(d)
+        _write(d, "app/b.py")
+        _commit(d, "refactor: x [no-test: 纯重命名,无行为变化]")
+        r = _run_bypass_check(d, base)
+        assert r.returncode == 0, r.stdout + r.stderr
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_gate_bypass_check_rejects_bare_marker_in_history():
+    """历史里的**裸** [no-test] 同样算绕过(理由从未被检查 = 等于没豁免)。"""
+    d = _tmp_repo()
+    try:
+        _write(d, "app/a.py")
+        _write(d, "tests/test_a.py")
+        _commit(d, "feat: 初始实现与测试")
+        base = _head(d)
+        _write(d, "app/b.py")
+        _commit(d, "refactor: x [no-test]")
+        r = _run_bypass_check(d, base)
+        assert r.returncode == 1, "裸标记在历史里被当成合法豁免"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_gate_bypass_check_clean_history_passes():
+    """干净历史(实现与测试同行)→ exit 0。"""
+    d = _tmp_repo()
+    try:
+        _write(d, "app/a.py")
+        _write(d, "tests/test_a.py")
+        _commit(d, "feat: 初始实现与测试")
+        base = _head(d)
+        _write(d, "app/b.py")
+        _write(d, "tests/test_b.py")
+        _commit(d, "feat: 实现 + 测试")
+        r = _run_bypass_check(d, base)
+        assert r.returncode == 0, r.stdout + r.stderr
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_check_subagent_injection_ok_when_signature_present(tmp_path):
     """有子 Agent 且含签名 → exit 0。"""
     proj = _mk_subagents(tmp_path, n_with_sig=1, n_without=1)
@@ -435,6 +638,61 @@ def test_skill_sentinel_silent_about_injection_when_arrived(tmp_path):
     r = _run(HOOKS / "skill-sentinel.sh", json.dumps({"session_id": "sess-y"}),
              {"SKILL_SENTINEL": "1", "HOME": str(tmp_path)})
     assert "注入未到达" not in r.stdout
+
+
+def test_skill_sentinel_surfaces_bypass_log():
+    """**绕过留痕必须被主动暴露** —— 只写进日志没人看,等于没留。"""
+    d = _tmp_repo()
+    try:
+        (d / ".claude" / "traces" / "bypass.jsonl").write_text(
+            json.dumps({"sha": "abc1234", "gate": "gate1", "msg_head": "x",
+                        "at": "2026-09-11T00:00:00Z"}) + "\n", encoding="utf-8")
+        r = _run(HOOKS / "skill-sentinel.sh", "{}",
+                 {"SKILL_SENTINEL": "1", "GATE_REPO": str(d)})
+        assert "绕过留痕" in r.stdout, f"留痕没被暴露;stdout={r.stdout!r}"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_skill_sentinel_silent_without_bypass_log():
+    """没有绕过日志 → 不发声(防噪音)。"""
+    d = _tmp_repo()
+    try:
+        r = _run(HOOKS / "skill-sentinel.sh", "{}",
+                 {"SKILL_SENTINEL": "1", "GATE_REPO": str(d)})
+        assert "绕过留痕" not in r.stdout
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_skill_sentinel_warns_when_hookspath_tampered():
+    """`core.hooksPath` 被改走 → 本地门禁(门1/门2/post-commit)全失效,必须出声。
+
+    这是**本地门禁的单一失效点**:改一行 git config,所有 .githooks 都不再运行,
+    而**不会有任何提示** —— 与 F1/F2 同型的静默失效。
+    """
+    d = _tmp_repo()
+    try:
+        subprocess.run(["git", "config", "core.hooksPath", "/dev/null"],
+                       cwd=d, check=True, capture_output=True)
+        r = _run(HOOKS / "skill-sentinel.sh", "{}",
+                 {"SKILL_SENTINEL": "1", "GATE_REPO": str(d)})
+        assert "hooksPath" in r.stdout, f"篡改没被发现;stdout={r.stdout!r}"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_skill_sentinel_no_hookspath_warning_when_correct():
+    """hooksPath 指向 .githooks(正常)→ 不就此发声。"""
+    d = _tmp_repo()
+    try:
+        subprocess.run(["git", "config", "core.hooksPath", ".githooks"],
+                       cwd=d, check=True, capture_output=True)
+        r = _run(HOOKS / "skill-sentinel.sh", "{}",
+                 {"SKILL_SENTINEL": "1", "GATE_REPO": str(d)})
+        assert "hooksPath" not in r.stdout
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
 
 
 # ── ③ 不该拦的不拦:哨兵类在开关关闭时静默 ────────────────────────────────

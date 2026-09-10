@@ -1,9 +1,11 @@
 #!/bin/sh
 # commit-msg —— 本地硬门(**终局兜底**;左移门见 .claude/hooks/impl-guard.sh)
 #
-# 【门 1】TDD 痕迹:改了实现文件却没改测试 → 拒绝。豁免:提交信息含 [no-test]
+# 【门 1】TDD 痕迹:改了实现文件却没改测试 → 拒绝。豁免:[no-test: <理由>](**必须带理由**)
 # 【门 2】skill 痕迹:改了实现文件,但本会话**没有调用过 `test-driven-development`** → 拒绝。
-#          豁免:提交信息含 [no-skill]
+#          豁免:[no-skill: <理由>](**必须带理由**)
+#   ⚠️ 绕过留痕:本文件可被 `git commit --no-verify` 绕过,而 `.githooks/post-commit`
+#      **不受 --no-verify 抑制** → 由它承担"绕过留痕";CI 另有从 git 历史重算门 1 的检查。
 #
 # 依据:母体 KD-9 + 2026-09-11 盲测实证。
 #   【门 2 的由来】曾判定「skill 调用不落 git → 无法强制」——**只对了一半**。
@@ -25,7 +27,10 @@ TST=$(printf '%s\n' "$CHANGED" | grep -cE '(^|/)tests?/.*\.(py|ts|js)$' || true)
 [ "$SRC" -gt 0 ] || exit 0     # 本次不动实现目录 → 两道门都不适用
 
 # ---------- 门 1:TDD 痕迹 ----------
-if [ "$TST" -eq 0 ] && ! printf '%s' "$msg" | grep -q '\[no-test\]'; then
+# 【豁免必须带理由】`[no-test: <理由>]`。裸 `[no-test]` **不放行** ——
+#   此前文案写「加 [no-test] 并说明理由」,实现却只 `grep -q '[no-test]'`,
+#   **理由从未被检查**,裸标记即可绕过,且豁免率完全不可见(2026-09-11 修)。
+if [ "$TST" -eq 0 ] && ! printf '%s' "$msg" | grep -qE '\[no-test:[[:space:]]*[^]]'; then
   cat >&2 <<EOF
 
 ✗ 门 1(commit-msg)未通过:改了实现却无测试
@@ -33,15 +38,17 @@ if [ "$TST" -eq 0 ] && ! printf '%s' "$msg" | grep -q '\[no-test\]'; then
   本次暂存实现文件 $SRC 个,测试文件 0 个。
   二选一:
     1) 先写测试(走 test-driven-development),或
-    2) 若确为纯重构/配置改动,提交信息里加 [no-test] 并说明理由。
+    2) 若确为纯重构/配置改动,提交信息里写 [no-test: <理由>] —— **必须带理由**,
+       裸 [no-test] 不再放行(理由让豁免可审计)。
 
-  (绕过:git commit --no-verify —— 请说明为何绕过)
+  (绕过:git commit --no-verify —— 请说明为何绕过;该动作由 .githooks/post-commit 留痕)
 EOF
   exit 1
 fi
 
 # ---------- 门 2:skill 痕迹(该调用却跳过)----------
-printf '%s' "$msg" | grep -q '\[no-skill\]' && exit 0
+# 豁免同样**必须带理由**:`[no-skill: <理由>]`(裸标记不放行)
+printf '%s' "$msg" | grep -qE '\[no-skill:[[:space:]]*[^]]' && exit 0
 
 TRACE="$ROOT/.claude/traces/latest.json"
 sid=$(sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TRACE" 2>/dev/null | head -1)
@@ -65,7 +72,7 @@ cat >&2 <<EOF
 
   二选一:
     1) 调用 'test-driven-development' skill 走一遍(先写会失败的测试),再提交;
-    2) 若本次无需(如纯配置/文档性质),提交信息里加 [no-skill] 并说明理由。
+    2) 若本次无需(如纯配置/文档性质),提交信息里写 [no-skill: <理由>] —— **必须带理由**。
 
   (依据:母体 KD-9;本门把"该调用 skill 却跳过"从软约束变成可机器校验 ——
    见 避坑库 02 与 docs/复盘/)

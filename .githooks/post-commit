@@ -1,0 +1,56 @@
+#!/bin/sh
+# post-commit —— **绕过留痕**(门 1 / 门 2 的事后兜底)
+#
+# 缘起(2026-09-11):门 1/门 2 的文案都写着「绕过:git commit --no-verify —— 请说明为何绕过」,
+#   但**绕过本身没有任何痕迹** —— 说了也没人看得见,豁免率完全不可见。
+#   "可被绕过"不是缺陷(git 自带干净出口),**"绕过无声"才是**。
+#
+# 为什么是 post-commit:
+#   `man githooks` 明示 commit-msg / pre-commit / prepare-commit-msg **可被 --no-verify 抑制**,
+#   而 **post-commit 不在被抑制之列** → 它是**绕过之后的必经之路**,由它承担留痕。
+#
+# 行为:**永不阻断**(提交已发生,无从阻断),只追加一行 JSON 到
+#   `.claude/traces/bypass.jsonl`(已 gitignore —— 它是本机事实,不是仓库内容)。
+#   留痕后由 `skill-sentinel.sh`(Stop)在会话收尾时出声,人不必主动查。
+#
+# 判据**重算**(而非采信历史),与 commit-msg 的门 1/门 2 保持一致:
+#   gate1 = 含实现文件、0 测试文件、且无合法豁免
+#   gate2 = gate1 已过、但本会话 trace 里没有 test-driven-development、且无合法豁免
+# 合法豁免 = `[no-test: <理由>]` / `[no-skill: <理由>]`(**带理由**才算,裸标记不算)
+
+set -u
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+msg=$(git log -1 --format=%B 2>/dev/null || true)
+[ -n "$msg" ] || exit 0
+
+CHANGED=$(git show --name-only --format= HEAD 2>/dev/null || true)
+SRC=$(printf '%s\n' "$CHANGED" | grep -cE '^(app|backend|src)/.*\.(py|ts|js)$' || true)
+TST=$(printf '%s\n' "$CHANGED" | grep -cE '(^|/)tests?/.*\.(py|ts|js)$' || true)
+
+[ "$SRC" -gt 0 ] || exit 0     # 本次不动实现目录 → 两道门都不适用
+
+gate=""
+if [ "$TST" -eq 0 ] && ! printf '%s' "$msg" | grep -qE '\[no-test:[[:space:]]*[^]]'; then
+  gate="gate1"
+fi
+if [ -z "$gate" ] && ! printf '%s' "$msg" | grep -qE '\[no-skill:[[:space:]]*[^]]'; then
+  TRACE="$ROOT/.claude/traces/latest.json"
+  if [ -f "$TRACE" ] && ! grep -q 'test-driven-development' "$TRACE" 2>/dev/null; then
+    gate="gate2"
+  fi
+fi
+[ -n "$gate" ] || exit 0
+
+sha=$(git rev-parse --short HEAD 2>/dev/null || echo '?')
+# 首行 + 去掉会破坏 JSON 的字符(引号/反斜杠)
+msghead=$(printf '%s' "$msg" | head -1 | tr -d '"\\' | cut -c1-120)
+dir="$ROOT/.claude/traces"
+mkdir -p "$dir" 2>/dev/null || exit 0
+
+printf '{"sha":"%s","gate":"%s","msg_head":"%s","at":"%s"}\n' \
+  "$sha" "$gate" "$msghead" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$dir/bypass.jsonl" 2>/dev/null
+
+printf '⚠ 绕过留痕:本次提交(%s)本应被【%s】拦下,但被绕过了。已记入 .claude/traces/bypass.jsonl\n' \
+  "$sha" "$gate" >&2
+exit 0

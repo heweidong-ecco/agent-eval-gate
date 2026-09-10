@@ -65,29 +65,21 @@ jobs:
       - name: skill 覆盖检查(装了 skill 必须登记到路由/锚点表;母体 KD-9)
         run: ./tools/check-skill-coverage.sh .claude/skills -- CLAUDE.md
 
-      - name: TDD 痕迹检查(改实现代码但未改测试 → 失败;可用 [no-test] 显式豁免)
-        # 依据:母体 KD-9。**硬门**:失败而非 warning —— 提示会被忽略,只有红灯不会。
-        # 豁免是**显式**的(提交信息含 [no-test]),必须付出"写一句理由"的成本,不能无声跳过。
+      - name: "TDD 痕迹检查(逐提交重算;[no-test: 理由] 显式豁免)"
+        # 依据:母体 KD-9 / KD-10。**硬门**:失败而非 warning —— 提示会被忽略,只有红灯不会。
+        #
+        # ⚠️ 2026-09-11 升级:原先用「区间聚合 diff + 区间内任一提交含 [no-test] 即豁免全区间」,
+        #   有两个**假阴性**:
+        #     ① 区间内某提交改了实现却无测试,会被**另一个提交的测试改动掩盖**;
+        #     ② 区间内任一提交写了 [no-test],就豁免**整个区间**。
+        #   现改为**逐提交重算**(tools/check_gate_bypass.py),判据与本地门 1 完全一致。
+        #   这也是 `git commit --no-verify` 在结构上**唯一绕不过**的一层:
+        #   本地 hook 可被绕过,而"历史重放"绕不过。
+        #   豁免必须带理由([no-test: <理由>]),裸标记不算 —— 让豁免可审计。
         if: github.event_name == 'pull_request' || github.event.before != '0000000000000000000000000000000000000000'
         run: |
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
-          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || true)
-
-          # 显式豁免:区间内任一提交信息含 [no-test](纯重构/配置改动)
-          if git log --format=%B "$BASE"..HEAD 2>/dev/null | grep -q '\[no-test\]'; then
-            echo "✅ TDD 痕迹检查:已用 [no-test] 显式豁免"
-            exit 0
-          fi
-
-          SRC=$(echo "$CHANGED" | grep -cE '^(app|backend|src)/.*\.(py|ts|js)$' || true)
-          TST=$(echo "$CHANGED" | grep -cE '(^|/)tests?/.*\.(py|ts|js)$' || true)
-          if [ "$SRC" -gt 0 ] && [ "$TST" -eq 0 ]; then
-            echo "::error::改了 $SRC 个实现文件,但未改任何测试 —— TDD 痕迹缺失(母体 KD-9)。"
-            echo "::error::请走 test-driven-development(先写测试);若确为纯重构/配置改动,"
-            echo "::error::请在提交信息里加 [no-test] 并说明理由(显式豁免,不允许无声跳过)。"
-            exit 1
-          fi
-          echo "✅ TDD 痕迹检查通过(实现 $SRC / 测试 $TST)"
+          python tools/check_gate_bypass.py "$BASE"
 
       # 真实被测/真 judge 冒烟:配置密钥后放开(EVAL_LIVE=1)
       # - name: 真实冒烟(需密钥)
