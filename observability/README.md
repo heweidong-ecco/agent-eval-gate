@@ -23,7 +23,17 @@ observability/
 
 ## 落地步骤
 1. 阶段3-步骤6:首个 Agent 即跑 `otel-init.py` + 埋点;本地 Jaeger/Phoenix 看 Trace。
+   - ✅ **R3 已落地(2026-09-10)**:实现在 `app/eval_gate/obs.py`(E9),已接进 E5 调度层
+     (`run.evaluate` 根 span → `sut.call`/`rule.check`/`judge.grade`)与 E1/E7
+     (`evalset.load`/`report.write`)。**Trace 视图** = `eval-gate trace [--run <run_id>]`;
+     span 落 `eval/runs/<run_id>.trace.jsonl`(OTLP-JSON 兼容,`EVAL_OTLP_ENDPOINT` 可外发)。
+   - **CLI 适配(与规范的一处差异,显式记录)**:规范的「本地 stdout → 采集器」面向常驻服务;
+     本产品是 CLI,stdout 是人读结果,故**结构化日志走 stderr**(`2>log.jsonl` 采集)。
+   - **脱敏**:日志只记 `{len, sha8}` 摘要,**永不记原文**(`需求基线.md:149`);全文留 E7 报告。
+     已由契约测试守:`tests/test_observability.py::test_logs_never_contain_answer_text`。
 2. 阶段4-步骤9:端到端 trace_id 一致性测试、采样/脱敏测试。
+   - ✅ **一致性测试已建**(`tests/test_observability.py::test_all_spans_share_one_trace_id`);
+     采样策略留阶段4。
 3. 阶段6-步骤11:按 `监控面板-清单.md` 上 L1/L2/L3 面板与告警;版本可比支撑灰度。
 
 ## 指标(对观测自身)

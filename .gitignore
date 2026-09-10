@@ -21,6 +21,7 @@ build/
 
 # 运行时数据(评估运行记录本地保留,提交摘要即可)
 eval/runs/*.local.json
+eval/runs/*.trace.jsonl
 
 # 观测本地后端数据(如 Phoenix/Jaeger 本地存储)
 observability/.local/
