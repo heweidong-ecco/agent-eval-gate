@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from eval_gate import mini_rag
+from eval_gate.obs import digest
 from eval_gate.rules import REFUSAL_LEXICON
 from eval_gate.schema import Case
 
@@ -169,12 +170,17 @@ class FastApiRagAdapter(SutAdapter):
             sources = [s.get("id") for s in (data.get("sources") or []) if isinstance(s, dict) and s.get("id")]
             return SutOutput(answer=answer, sources=sources, raw=data,
                              meta={"sut": self.id, "http_status": status})
+        # ⚠️ 纪律:异常消息**绝不**携带响应体原文 —— 它会经 E5 的错误日志与 span.error
+        # 落进 stderr 与 *.trace.jsonl(违反 observability/日志-schema.md:1「长文本正文不入日志」
+        # 与 需求基线.md:149 红线)。响应体只保留**摘要**;原文留在 SutOutput.raw / 报告(审计用)。
         if status in (401, 403):
             code = SutErrorCode.E_SUT_AUTH if status == 401 else SutErrorCode.E_SUT_QUOTA
-            raise SutAdapterError(code, str(data.get("detail") or data), status=status)
+            raise SutAdapterError(code, f"被测拒绝(HTTP {status});响应摘要 {digest(data)}", status=status)
         if status >= 500:
-            raise SutAdapterError(SutErrorCode.E_SUT_5XX, f"被测 5xx: {status} {data}", status=status)
-        raise SutAdapterError(SutErrorCode.E_SUT_4XX, f"被测 4xx: {status} {data}", status=status)
+            raise SutAdapterError(SutErrorCode.E_SUT_5XX,
+                                  f"被测 5xx(HTTP {status});响应摘要 {digest(data)}", status=status)
+        raise SutAdapterError(SutErrorCode.E_SUT_4XX,
+                              f"被测 4xx(HTTP {status});响应摘要 {digest(data)}", status=status)
 
 
 class MiniRagQaAdapter(SutAdapter):

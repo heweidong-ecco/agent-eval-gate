@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from eval_gate.judge import FakeJudge
 from eval_gate.runner import RunResult, default_thresholds, evaluate
 from eval_gate.schema import load_evals
@@ -85,6 +87,25 @@ def test_corrupt_threshold_file_falls_back_stricter(tmp_path):
     p = tmp_path / "bad.json"
     p.write_text("{ not json", encoding="utf-8")
     assert default_thresholds(p)["l2_task_completion"]["min"] == 0.9
+
+
+@pytest.mark.parametrize("bad", [
+    {"l2_task_completion": 0.85},                 # 该是对象,给了数字 → 曾 AttributeError
+    {"l2_task_completion": None},                 # 曾 AttributeError
+    {"l2_task_completion": {"min": True}},        # bool 也是 int,须排除
+    {"l2_task_completion": {"min": "0.8"}},       # 字符串不是数值
+    {"redteam_zero": "yes"},                      # 该是 bool
+])
+def test_malformed_threshold_shape_falls_back_stricter(tmp_path, capsys, bad):
+    """评审 Important:**合法 JSON 但结构写错**曾直接崩,而非按文档承诺回落更严兜底。
+
+    `eval/阈值.md` / `docs/部署.md` 承诺「读不到/不可信 → 回落更严兜底,绝不放宽门」。
+    """
+    p = tmp_path / "bad.json"
+    p.write_text(json.dumps(bad), encoding="utf-8")
+    thr = default_thresholds(p)
+    assert thr["l2_task_completion"]["min"] == 0.9, "必须回落更严兜底"
+    assert "形状不合法" in capsys.readouterr().err, "应告警,不静默"
 
 
 def test_wired_threshold_actually_gates(tmp_path):

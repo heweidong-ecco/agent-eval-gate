@@ -54,9 +54,18 @@ def new_span_id() -> str:
     return secrets.token_hex(8)
 
 
-def digest(text: str | None) -> dict:
-    """脱敏摘要:只留长度与 sha256 前 8 位 —— 日志里**永不**出现原文。"""
-    s = text or ""
+def digest(text) -> dict:
+    """脱敏摘要:只留长度与 sha256 前 8 位 —— 日志里**永不**出现原文。
+
+    接受任意类型(非 str 先 JSON 序列化),便于给**响应体**之类结构做摘要:
+    异常消息里只放 `digest(body)`,不放 body 本身(见 KD 记录:错误路径曾泄漏被测原文)。
+    """
+    if isinstance(text, str):
+        s = text
+    elif text is None:
+        s = ""
+    else:
+        s = json.dumps(text, ensure_ascii=False, default=str)
     return {"len": len(s), "sha8": hashlib.sha256(s.encode("utf-8")).hexdigest()[:8]}
 
 

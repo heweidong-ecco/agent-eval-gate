@@ -256,3 +256,19 @@ def test_cli_fault_injection_unreachable_judge_and_sut(tmp_path, monkeypatch):
     assert doc["exit_code"] == 1
     assert [c["verdict"] for c in doc["cases"]] == ["fail", "fail"]
     assert any("E_JUDGE_" in r for r in doc["cases"][1]["reasons"]), "judge 故障须带契约错误码"
+
+
+# ---- 独立评审(2026-09-11)发现问题的回归 ------------------------------------
+
+def test_cli_early_failure_with_bad_report_dir_still_returns_3(tmp_path):
+    """评审 Important:`finally` 里 trace 落盘失败曾**顶掉契约 exit code**。
+
+    `--report-dir` 指向一个**已存在的文件**时,finally 的 write_trace 会因 mkdir 失败而抛错;
+    若它抛出,`main()` 崩溃退出码为 **1** —— 而 1 在 CI 里恰好等于「block/阻断发布」,
+    一个 IO/路径问题会被读成「质量不过关」。
+    """
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    rc = main(["run", "--evals", str(tmp_path / "nope.json"), "--offline",
+               "--report-dir", str(blocker)])
+    assert rc == 3, f"必须返回契约内的 exit 3(配置错误),实际 {rc}"

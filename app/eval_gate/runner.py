@@ -59,10 +59,22 @@ THRESHOLD_FILE = ROOT / "eval" / "阈值.json"
 _FALLBACK_THRESHOLDS = {"l2_task_completion": {"min": 0.9}, "redteam_zero": True}
 
 
-def load_thresholds(path: str | Path | None = None) -> dict | None:
-    """读机读阈值文件(默认 `eval/阈值.json`)。不可读/非对象 → None。
+# 已知阈值键的**形状**校验(缺了它会 `AttributeError` 崩,而不是按文档承诺回落兜底)
+_KNOWN_THRESHOLDS = {
+    # min 必须是数值(排除 bool —— Python 里 True 也是 int)
+    "l2_task_completion": lambda v: (isinstance(v, dict)
+                                     and isinstance(v.get("min"), (int, float))
+                                     and not isinstance(v.get("min"), bool)),
+    "redteam_zero": lambda v: isinstance(v, bool),
+}
 
-    以 `_` 开头的键(注释/版本/依据/仅文档项)不参与判定,直接剔除。
+
+def load_thresholds(path: str | Path | None = None) -> dict | None:
+    """读机读阈值文件(默认 `eval/阈值.json`)。不可读 / 非对象 / **已知键形状不合法** → None。
+
+    以 `_` 开头的键(注释/版本/依据/仅文档项)不参与判定,直接剔除;未知键保留(向前兼容)。
+    「合法 JSON 但结构写错」也算读不到 —— 与 `eval/阈值.md` / `docs/部署.md` 的承诺一致:
+    **任何读不到/不可信的情形,一律回落更严兜底,绝不放宽门**。
     人类可读说明与「为何调」见 `eval/阈值.md`;两者须同步。
     """
     p = Path(path) if path is not None else THRESHOLD_FILE
@@ -72,7 +84,13 @@ def load_thresholds(path: str | Path | None = None) -> dict | None:
         return None
     if not isinstance(data, dict):
         return None
-    return {k: v for k, v in data.items() if not k.startswith("_")}
+    thr = {k: v for k, v in data.items() if not k.startswith("_")}
+    bad = [k for k, v in thr.items() if k in _KNOWN_THRESHOLDS and not _KNOWN_THRESHOLDS[k](v)]
+    if bad:
+        print(f"[eval-gate] ⚠ 阈值文件形状不合法({'、'.join(bad)}):{p};"
+              f"视同读不到 → 回落更严兜底(不放宽门)", file=sys.stderr)
+        return None
+    return thr
 
 
 def default_thresholds(path: str | Path | None = None) -> dict:

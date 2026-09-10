@@ -18,18 +18,32 @@
 ## 纪律(精简;全量见 B 横切原则 + Kit README)
 - **skills 路由 —— 命中即【必须调用】,不是「可以调用」**。开工前先加载入口触发器 `using-superpowers`,再按下表执行:
 
-  | 触发场景 | **必须调用** |
-  |---|---|
-  | 造/设计/规划 Agent 主流程 | `agent-system-creator`(主持流程) |
-  | **写或改实现代码** | **`test-driven-development`** |
-  | **声称"完成 / 修好 / 通过"** | **`verification-before-completion`** |
-  | **阶段门验收 / gate 判定** | **`gate-review`**(卡门;其结论=建议,终裁=业务方签核) |
-  | **每次 commit / PR 前** | **`留痕-checks`** |
-  | 遇 bug / 测试失败 / 行为异常 | `systematic-debugging` |
-  | 写实施计划 / 执行计划 | `writing-plans` / `executing-plans` |
-  | 定调、优先级、方案压测 | `grilling` |
-  | 改 `settings.json` | `update-config` |
-  | Kit 自身缺陷 | `kit-feedback` |
+  | 阶段 | 触发场景 | **必须调用** |
+  |---|---|---|
+  | **入口** | **任何任务开始前** | **`using-superpowers`**(先过它,否则下表不会被想起) |
+  | 立项/发散 | 需求不清、要发散方案 | `brainstorming` |
+  | 立项 | 开新 Agent 项目 | `new-project-launch` |
+  | 规划 | 造/设计/规划 Agent 主流程 | `agent-system-creator`(主持流程) |
+  | 规划 | 定调、优先级、方案压测 | `grilling` |
+  | 规划 | 写实施计划 / 执行计划 | `writing-plans` / `executing-plans` |
+  | 隔离 | 需要隔离工作区(不影响当前分支) | `using-git-worktrees` |
+  | 执行 | **写或改实现代码** | **`test-driven-development`** |
+  | 执行 | 拆成多个独立任务并行 | `dispatching-parallel-agents` |
+  | 执行 | 每任务派独立 subagent 落地 | `subagent-driven-development` |
+  | 排查 | 遇 bug / 测试失败 / 行为异常 | `systematic-debugging` |
+  | 收尾 | **声称"完成 / 修好 / 通过"** | **`verification-before-completion`** |
+  | 收尾 | 请人评审我的代码 | `requesting-code-review` |
+  | 收尾 | 收到评审意见、要落实(先验证再改) | `receiving-code-review` |
+  | 收尾 | 分支收尾/合并/清理 | `finishing-a-development-branch` |
+  | 门禁 | **阶段门验收 / gate 判定** | **`gate-review`**(卡门;结论=建议,终裁=业务方签核) |
+  | 门禁 | **每次 commit / PR 前** | **`留痕-checks`** |
+  | 工具/元 | 改 `settings.json` | `update-config` |
+  | 工具/元 | 新建/修改 **skill 本身** | `writing-skills` |
+  | 工具/元 | Kit 自身缺陷 | `kit-feedback` |
+
+  > **新增 skill 时必须同做的三件事**(否则本条规约失效 —— 见 KD-9):
+  > ① 在 `skills-router.md` 登记**何时用**;② 在**本表**补一行(插到对应阶段);③ 若要强制,补**触发或门禁**。
+  > 三者缺一 → 校验脚本 `tools/check-skill-coverage.sh` 会**报错**(母体与派生项目 CI 均跑)。
 
   > ⚠️ **2026-09-11 教训(KD-9)**:本仓阶段3 全程 **Skill 调用仅 2 次**(同期 Bash 205 / Edit 146)—— **写码未走 TDD、阶段门未走 gate-review、提交未走 留痕-checks、完成声明未走 verification**。根因:本句原为「动手前查 skills **是否命中**」(笼统、无对应表、无"必须"措辞),且入口触发器 `using-superpowers` **未随 Kit 进入本仓/锚点**。**纪律靠"记得",结构靠"躲不掉"** —— 详见避坑库 §3 与 `docs/复盘/`。**本表即那处结构:命中不调用 = 违规。**
 - **节点收尾双自查(5 触发点:init / 定调压测门 / gate-review / 留痕-checks / 节点完成)** —— **两项都问,缺一不可**:

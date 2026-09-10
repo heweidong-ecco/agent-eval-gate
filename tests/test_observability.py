@@ -148,3 +148,38 @@ def test_cli_writes_trace_file_and_renders_view(tmp_path, capsys):
 
 def test_cli_trace_missing_run_returns_usage_error(tmp_path):
     assert main(["trace", "--run", "nope", "--trace-dir", str(tmp_path)]) == 3
+
+
+# ---- 独立评审(2026-09-11)Critical:错误路径曾泄漏被测响应原文 ----------------
+
+def test_response_body_never_leaks_into_logs_or_trace(tmp_path, monkeypatch):
+    """红线回归:被测 4xx 的**响应体**曾被拼进异常消息 → 落 stderr 日志与 `*.trace.jsonl`。
+
+    注入一个含敏感串的 422 响应体(真实场景:FastAPI/pydantic 422 会把请求 `input`
+    —— 即被测问题的原文 —— 原样回显),断言该串**不出现在**日志、trace、报告中。
+
+    依据:`observability/日志-schema.md` 规则 1「长文本正文一律不入日志」+
+    `需求基线.md:149`(日志禁记录原始敏感)。原有的 happy-path 脱敏测试守不住这条。
+    """
+    from eval_gate.adapters import REGISTRY, FastApiRagAdapter
+
+    SECRET = "SENSITIVE-CUSTOMER-TEXT-42"
+    monkeypatch.setitem(
+        REGISTRY, "fastapi-rag",
+        lambda **_kw: FastApiRagAdapter(
+            base_url="http://x", api_key="k",
+            post=lambda url, headers, payload: (
+                422, {"detail": [{"loc": ["body", "question"], "msg": "bad", "input": SECRET}]})))
+
+    stream = io.StringIO()
+    tr = Tracer(log_stream=stream)
+    ev = EvSet(version=1, threshold_ref="eval/阈值.md", cases=[
+        Case(id=1, sut="fastapi-rag", module="rag", tags=[], input={"question": SECRET},
+             expected=Expected(answer_contains=["x"]), checks=Checks(), source=None)])
+    res = evaluate(ev, judge=FakeJudge(), thresholds=default_thresholds(), tracer=tr)
+    tp = tr.write_trace(tmp_path / "t.trace.jsonl")
+
+    assert SECRET not in stream.getvalue(), "日志出现了被测响应/问题原文"
+    assert SECRET not in tp.read_text(encoding="utf-8"), "trace 文件出现了被测响应/问题原文"
+    assert SECRET not in json.dumps(res.cases, ensure_ascii=False), "报告(该失败路径)出现了原文"
+    assert res.cases[0]["verdict"] == "fail"  # 仍然正确记 fail

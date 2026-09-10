@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 
 from eval_gate.config import judge_config
@@ -76,8 +77,10 @@ def _cmd_run(args) -> int:
             try:
                 with open(args.threshold, encoding="utf-8") as f:
                     thresholds.update(json.load(f))
-            except (OSError, json.JSONDecodeError) as e:
-                print(f"[eval-gate] 阈值文件不可读: {e}")
+            # TypeError/ValueError:JSON 合法但结构不对(如顶层是数组)→ 同属配置错误 exit 3,
+            # 不能让 `dict.update` 抛出去把 exit code 顶成 traceback(那会与 1=阻断 混淆)
+            except (OSError, json.JSONDecodeError, TypeError, ValueError) as e:
+                print(f"[eval-gate] 阈值文件不可读/结构不对: {e}")
                 return 3
 
         result = evaluate(ev, quality=quality, judge=judge, thresholds=thresholds, tracer=tracer)
@@ -97,12 +100,19 @@ def _cmd_run(args) -> int:
         print(f"  报告: {path}")
         return result.exit_code
     finally:
-        # Trace 与报告同目录同名(+ .trace.jsonl);早期失败无 run_id 时用 trace_id 兜底命名
+        # Trace 与报告同目录同名(+ .trace.jsonl);早期失败无 run_id 时用 trace_id 兜底命名。
+        # ⚠️ 此处【必须】吞掉自身异常:它是 finally,抛错会顶掉契约 exit code(0/1/2/3)——
+        #    而崩溃退出码是 1,**在 CI 里恰好等于「block/阻断发布」**:一个 IO/路径问题会被读成
+        #    「质量不过关」。与 `export_otlp()`「失败不阻塞主流程」同一原则
+        #    (observability/trace_id-规范.md §7:采集端故障不阻塞业务;Trace 丢失可由结构化日志兜底)。
         name = run_id or f"error-{tracer.trace_id[:8]}"
         if tracer.enabled:
-            tp = tracer.write_trace(Path(args.report_dir) / f"{name}.trace.jsonl")
-            if run_id:
-                print(f"  Trace: {tp}")
+            try:
+                tp = tracer.write_trace(Path(args.report_dir) / f"{name}.trace.jsonl")
+                if run_id:
+                    print(f"  Trace: {tp}")
+            except OSError as e:
+                print(f"  ⚠ Trace 落盘失败(不影响 exit code): {e}", file=sys.stderr)
             tracer.export_otlp()
 
 
