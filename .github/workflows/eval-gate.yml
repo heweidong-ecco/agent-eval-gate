@@ -57,6 +57,20 @@ jobs:
             echo "✅ 本次未改动评测集/阈值,跳过"
           fi
 
+      - name: TDD 痕迹检查(改 app/ 但未改 tests/ → 警告)
+        if: github.event_name == 'pull_request' || github.event.before != '0000000000000000000000000000000000000000'
+        run: |
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || true)
+          app=$(echo "$CHANGED" | grep -cE '^app/.*\.py$' || true)
+          tst=$(echo "$CHANGED" | grep -cE '^tests/.*\.py$' || true)
+          if [ "$app" -gt 0 ] && [ "$tst" -eq 0 ]; then
+            echo "::warning::改了 $app 个 app/ 下的 .py,但未改任何 tests/ —— TDD 痕迹缺失(KD-9)。"
+            echo "::warning::请确认是否走了 test-driven-development;若确为纯重构/配置改动,请在 PR 描述里说明。"
+          else
+            echo "✅ TDD 痕迹检查通过(app 改动 $app / tests 改动 $tst)"
+          fi
+
       # 真实被测/真 judge 冒烟:配置密钥后放开(EVAL_LIVE=1)
       # - name: 真实冒烟(需密钥)
       #   run: EVAL_LIVE=1 pytest -q tests/test_live_smoke.py

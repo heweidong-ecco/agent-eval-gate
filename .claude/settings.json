@@ -10,6 +10,10 @@
           {
             "type": "command",
             "command": "FAILURE_SENTINEL=1 .claude/hooks/failure-sentinel.sh"
+          },
+          {
+            "type": "command",
+            "command": "SKILL_SENTINEL=1 .claude/hooks/skill-sentinel.sh"
           }
         ]
       }

@@ -16,7 +16,22 @@
 5. 每选型进 `docs/decisions/DEC-*.md`;外部数据带来源、标"外部参考",不冒充。
 
 ## 纪律(精简;全量见 B 横切原则 + Kit README)
-- 动手前查 skills 是否命中:**agent-system-creator**(造 Agent 主流程,触发优先)主持;superpowers=编码/测试引擎;gate-review / 留痕-checks 卡门;**kit-feedback**(Kit 缺陷反馈)(路由见 Kit `skills-router.md`)。
+- **skills 路由 —— 命中即【必须调用】,不是「可以调用」**。开工前先加载入口触发器 `using-superpowers`,再按下表执行:
+
+  | 触发场景 | **必须调用** |
+  |---|---|
+  | 造/设计/规划 Agent 主流程 | `agent-system-creator`(主持流程) |
+  | **写或改实现代码** | **`test-driven-development`** |
+  | **声称"完成 / 修好 / 通过"** | **`verification-before-completion`** |
+  | **阶段门验收 / gate 判定** | **`gate-review`**(卡门;其结论=建议,终裁=业务方签核) |
+  | **每次 commit / PR 前** | **`留痕-checks`** |
+  | 遇 bug / 测试失败 / 行为异常 | `systematic-debugging` |
+  | 写实施计划 / 执行计划 | `writing-plans` / `executing-plans` |
+  | 定调、优先级、方案压测 | `grilling` |
+  | 改 `settings.json` | `update-config` |
+  | Kit 自身缺陷 | `kit-feedback` |
+
+  > ⚠️ **2026-09-11 教训(KD-9)**:本仓阶段3 全程 **Skill 调用仅 2 次**(同期 Bash 205 / Edit 146)—— **写码未走 TDD、阶段门未走 gate-review、提交未走 留痕-checks、完成声明未走 verification**。根因:本句原为「动手前查 skills **是否命中**」(笼统、无对应表、无"必须"措辞),且入口触发器 `using-superpowers` **未随 Kit 进入本仓/锚点**。**纪律靠"记得",结构靠"躲不掉"** —— 详见避坑库 §3 与 `docs/复盘/`。**本表即那处结构:命中不调用 = 违规。**
 - **节点收尾双自查(5 触发点:init / 定调压测门 / gate-review / 留痕-checks / 节点完成)** —— **两项都问,缺一不可**:
   1. **失败即补 case(B `05-模块-评估与测试:84`)**:**本轮有失败吗**(被测失败 / 评测门自身缺陷 / 环境坑 / 我方流程错误)?**有 → 当轮不算完成**,直到落盘:被测的失败 → `eval/cases/`(带 `regression.root_cause`,格式见其 README);**我方过程错误 → `docs/复盘/`**(模板见该目录)。
      > ⚠️ 2026-09-10 教训:这条纪律**原先只写在 `eval/README.md`,不在本锚点里**,于是整个阶段3 **一次未执行**(17 条错误散落 5 处)。**纪律不在每会话必读的文件里 = 等于没有。**
