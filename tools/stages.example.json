@@ -1,0 +1,11 @@
+{
+  "_comment": "阶段门配置(模板)。每个阶段列出它的【产出物】—— 产出物必须真实存在且非空,否则该阶段不算通过。用法见 tools/stage_gate.py。",
+  "stages": [
+    { "name": "分析",   "evidence": ["docs/state/REQ-0001/01-需求分析.md"] },
+    { "name": "设计",   "evidence": ["docs/state/REQ-0001/02-设计.md"] },
+    { "name": "编码",   "evidence": ["docs/state/REQ-0001/03-编码报告.md"] },
+    { "name": "单测",   "evidence": ["docs/state/REQ-0001/04-单测报告.md"] },
+    { "name": "评审",   "evidence": ["docs/state/REQ-0001/05-评审记录.md"] },
+    { "name": "CI验证", "evidence": ["docs/state/REQ-0001/06-ci结果.md"] }
+  ]
+}

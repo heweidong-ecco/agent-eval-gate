@@ -21,8 +21,13 @@ jobs:
         run: pip install -e '.[dev]'
 
       - name: 单元 + 契约测试(离线、零外网)
-        # 含 tests/test_failure_cases.py —— eval/cases/ 每条必须带 regression.root_cause
-        run: pytest -q
+        # 含 tests/test_failure_cases.py(eval/cases/ 每条必须带 regression.root_cause)
+        # 与 tests/test_hooks.py(**门禁防腐**:语法/可执行/已注册/该拦的拦)
+        run: pytest -q --junitxml=/tmp/junit.xml
+
+      - name: 测试报告合规检查(防"假测试":空跑 / skip 冒充通过)
+        # 口径:total>0 ∧ 失败=0 ∧ 错误=0 ∧ 跳过 ≤ 基线(默认 2 = live_smoke 的 2 条)
+        run: python tools/check_pytest_report.py /tmp/junit.xml
 
       - name: 自证:忠实被测应过门(exit 0)
         run: python -m eval_gate run --evals eval/mini_rag_qa.evals.json --mode good --offline
