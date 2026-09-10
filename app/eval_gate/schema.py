@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-SUPPORTED_SUTS = {"mini-rag-qa"}  # fastapi-rag 等真实被测在 E2 增量注册
+SUPPORTED_SUTS = {"mini-rag-qa", "fastapi-rag"}  # = contracts/评测-evals-schema.md:26 的 sut 枚举
 MODULES = {"rag", "task", "memory", "tool-mcp", "eval"}
 
 

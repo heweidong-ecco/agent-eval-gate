@@ -97,7 +97,9 @@ class FastApiRagAdapter(SutAdapter):
 
     def run_case(self, case: Case) -> SutOutput:
         url = f"{self.base_url}/api/v1/rag/search?mode={self.mode}"
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        # 契约 contracts/评测-sut-adapter.md:39「header 鉴权(X-API-Key 或 JWT)」;
+        # 被测把 Authorization: Bearer 一律按 JWT 验签,API Key 必须走 X-API-Key(R0 纠错)。
+        headers = {"X-API-Key": self.api_key, "Content-Type": "application/json"}
         payload = {
             "question": case.input["question"], "top_k": self.top_k,
             "generate_answer": True, "citations": True,

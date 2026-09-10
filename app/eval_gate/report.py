@@ -9,18 +9,20 @@ import json
 from pathlib import Path
 
 
-def write_run(result, outdir: str | Path, ev_path: str | Path, quality: str, judge_label: str) -> Path:
+def write_run(result, outdir: str | Path, ev_path: str | Path, judge_label: str) -> Path:
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{result.run_id}.local.json"
     doc = {
         "run_id": result.run_id,
         "evals_file": str(ev_path),
-        "sut_quality": quality,
         "judge": judge_label,
         "summary": result.summary,
         "applied_thresholds": result.applied_thresholds,
         "blockers": result.blockers,
+        # R0:熔断/整批 aborted 的承载字段(契约 contracts/评测-report.md exit 3)
+        "degraded": result.degraded,
+        "degraded_reason": result.degraded_reason,
         "exit_code": result.exit_code,
         "cases": result.cases,
     }

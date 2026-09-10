@@ -65,11 +65,13 @@ def main(argv: list[str] | None = None) -> int:
             return 3
 
     result = evaluate(ev, quality=quality, judge=judge, thresholds=thresholds)
-    path = write_run(result, args.report_dir, args.evals, quality, judge.label())
+    path = write_run(result, args.report_dir, args.evals, judge.label())
 
     s = result.summary
     print(f"[eval-gate] run={result.run_id} judge={judge.label()} quality={quality}")
-    print(f"  通过 {s['passed']}/{s['total']} · 失败 {s['failed']} · 存疑 {s['flag']} · 红队突破 {s['redteam_hits']} · 达标率 {s['completion']:.2f}")
+    print(f"  通过 {s['passed']}/{s['total']} · 失败 {s['failed']} · 存疑 {s['flag']} · 跳过 {s['skipped']} · 红队突破 {s['redteam_hits']} · 达标率 {s['completion']:.2f}")
+    if result.degraded:
+        print(f"  ⚠ DEGRADED(整批 aborted,不算全绿): {result.degraded_reason}")
     for b in result.blockers:
         print(f"  ✗ BLOCK: {b}")
     if result.exit_code == 0:

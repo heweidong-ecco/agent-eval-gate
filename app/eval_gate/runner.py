@@ -12,8 +12,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from eval_gate.adapters import get_adapter
-from eval_gate.judge import FakeJudge, Judge, build_item
+from eval_gate.adapters import SutAdapterError, SutErrorCode, get_adapter
+from eval_gate.judge import FakeJudge, Judge, JudgeVerdict, build_item
 from eval_gate.rules import run_deterministic
 from eval_gate.schema import Case, EvSet
 
@@ -27,6 +27,8 @@ class RunResult:
     blockers: list[str]
     applied_thresholds: dict
     judge_label: str = "offline"
+    degraded: bool = False
+    degraded_reason: str | None = None
 
 
 def default_thresholds() -> dict:
@@ -68,7 +70,10 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
 
     item = build_item(case.id, case.input.get("question", ""), _expected_dict(case),
                       answer, sources, {"passed": rule.passed, "hits": rule.hits})
-    jv = judge.grade(item)
+    try:
+        jv = judge.grade(item)
+    except Exception as e:  # R0:judge 运行时故障记该 case fail,不得穿出崩进程
+        jv = JudgeVerdict(verdict="fail", score=0.0, reasons=[f"judge 调用失败: {e}"])
     res["judge_used"] = True
     res["verdict"] = "pass" if (rule.passed and jv.verdict == "pass") else ("flag" if jv.verdict == "flag" else "fail")
     res["score"] = jv.score if rule.passed else 0.0
@@ -85,15 +90,38 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
     active_judge: Judge | None = judge if judge is not None else FakeJudge()
 
     case_results: list[dict] = []
-    passed = failed = flag = redteam_hits = 0
+    passed = failed = flag = redteam_hits = skipped = 0
+    degraded = False
+    degraded_reason: str | None = None
 
-    for case in ev.cases:
+    for idx, case in enumerate(ev.cases):
         adapter_kw = {"quality": quality}
         if quality_by_sut and case.sut in quality_by_sut:
             adapter_kw = {"quality": quality_by_sut[case.sut]}
         try:
             output = get_adapter(case.sut, **adapter_kw).run_case(case)
-        except Exception as e:  # 被测错误:MVP 记为 fail(后续 E5 重试/熔断接管)
+        except SutAdapterError as e:
+            case_results.append({
+                "id": case.id, "module": case.module, "deterministic_only": case.checks.deterministic_only,
+                "judge_used": False, "verdict": "fail", "score": 0.0,
+                "reasons": [f"被测调用失败: {e}"], "evidence_refs": [], "answer": "", "sources": [],
+            })
+            failed += 1
+            # 契约 contracts/评测-sut-adapter.md:34:E_SUT_QUOTA → 整批 aborted,run degraded
+            if e.code is SutErrorCode.E_SUT_QUOTA:
+                degraded, degraded_reason = True, f"{e.code.name}: {e}"
+                for rest in ev.cases[idx + 1:]:
+                    case_results.append({
+                        "id": rest.id, "module": rest.module,
+                        "deterministic_only": rest.checks.deterministic_only,
+                        "judge_used": False, "verdict": "skipped", "score": 0.0,
+                        "reasons": [f"整批 aborted({e.code.name}):未执行"],
+                        "evidence_refs": [], "answer": "", "sources": [],
+                    })
+                    skipped += 1
+                break
+            continue
+        except Exception as e:  # 其余被测错误:记 fail,run 继续(不中断整批)
             case_results.append({
                 "id": case.id, "module": case.module, "deterministic_only": case.checks.deterministic_only,
                 "judge_used": False, "verdict": "fail", "score": 0.0,
@@ -130,8 +158,9 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
         else:
             failed += 1
 
-    total = passed + failed + flag
-    completion = passed / total if total else 0.0
+    judged = passed + failed + flag          # 实际判分的 case(不含 aborted 跳过的)
+    total = judged + skipped
+    completion = passed / judged if judged else 0.0
 
     min_completion = float(thr.get("l2_task_completion", {}).get("min", 0.0))
     redteam_zero = bool(thr.get("redteam_zero", True))
@@ -144,10 +173,14 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
 
     summary = {
         "total": total, "passed": passed, "failed": failed, "flag": flag,
-        "skipped": 0, "redteam_hits": redteam_hits, "completion": round(completion, 4),
+        "skipped": skipped, "redteam_hits": redteam_hits, "completion": round(completion, 4),
     }
 
-    if blockers:
+    if degraded:
+        # 整批 aborted:本轮未跑完 → 阈值判定作废(不据此报 l2 未达标),按 exit 3 告警
+        blockers = []
+        exit_code = 3
+    elif blockers:
         exit_code = 1
     elif flag:
         exit_code = 2  # 有 flag 需人工
@@ -157,4 +190,5 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
     judge_label = active_judge.label() if active_judge else "offline"
     return RunResult(run_id=_run_id(ev, quality), summary=summary, cases=case_results,
                      exit_code=exit_code, blockers=blockers,
-                     applied_thresholds=thr, judge_label=judge_label)
+                     applied_thresholds=thr, judge_label=judge_label,
+                     degraded=degraded, degraded_reason=degraded_reason)

@@ -8,12 +8,28 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 
 from eval_gate.config import JudgeConfig, judge_config
 
 VERDICTS = {"pass", "fail", "flag"}
+
+
+class JudgeError(Exception):
+    """judge **调用**失败(网络/HTTP),带契约错误码 —— 与 E_JUDGE_PARSE(解析失败)区分。
+
+    码取 `contracts/评测-judge.md` 错误码表。映射(该表无「judge 服务端不可用」码,
+    故以 `E_JUDGE_TIMEOUT` 作不可用伞码):
+    - 401/403 → `E_JUDGE_AUTH`
+    - 400/404 → `E_JUDGE_MODEL_UNKNOWN`(端点不认该模型名)
+    - 超时 / 不可达 / 其余 HTTP → `E_JUDGE_TIMEOUT`
+    """
+
+    def __init__(self, code: str, message: str):
+        super().__init__(f"[{code}] {message}")
+        self.code = code
 REFUSAL_TOKENS = ("无法回答", "不能回答", "抱歉", "没有相关", "知识库中没有", "无法确定")
 
 
@@ -49,8 +65,17 @@ def _openai_chat_http(cfg: JudgeConfig, messages: list[dict]) -> str:
             "Authorization": f"Bearer {cfg.api_key}",
         },
     )
-    with urllib.request.urlopen(req, timeout=cfg.timeout_s) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=cfg.timeout_s) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            raise JudgeError("E_JUDGE_AUTH", f"judge 鉴权失败: HTTP {e.code}")
+        if e.code in (400, 404):
+            raise JudgeError("E_JUDGE_MODEL_UNKNOWN", f"端点不认模型 {cfg.model!r}: HTTP {e.code}")
+        raise JudgeError("E_JUDGE_TIMEOUT", f"judge 不可用: HTTP {e.code}")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise JudgeError("E_JUDGE_TIMEOUT", f"judge 不可达/超时: {e}")
     return data["choices"][0]["message"]["content"]
 
 

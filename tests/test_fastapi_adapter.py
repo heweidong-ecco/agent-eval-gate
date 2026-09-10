@@ -46,7 +46,10 @@ def test_fastapi_adapter_builds_request_and_maps_response():
     assert captured["payload"]["question"] == "Python 哪一年发布?"
     assert captured["payload"]["generate_answer"] is True
     assert captured["payload"]["top_k"] == 3
-    assert captured["headers"]["Authorization"] == "Bearer k-test"
+    # 契约 contracts/评测-sut-adapter.md:39「header 鉴权(X-API-Key 或 JWT)」——
+    # 被测把 Bearer 一律当 JWT 验签,故 API Key 必须走 X-API-Key(R0 纠错)。
+    assert captured["headers"]["X-API-Key"] == "k-test"
+    assert "Authorization" not in captured["headers"]
     assert out.answer == "Python 于 1991 年发布。"
     assert out.sources == ["doc-1"]
     assert out.raw["docs"]

@@ -108,3 +108,4 @@ def test_schema_rejects_empty_expected_when_not_deterministic_only(tmp_path):
 
 def test_registered_suts_include_mini_rag_qa():
     assert "mini-rag-qa" in SUPPORTED_SUTS
+    assert "fastapi-rag" in SUPPORTED_SUTS  # 契约 评测-evals-schema.md:26 的 sut 枚举

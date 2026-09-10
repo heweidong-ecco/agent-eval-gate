@@ -22,7 +22,9 @@
   "eval_version": 1, "evals_file_sha": "…",
   "sut_versions": {"fastapi-rag": "被测仓 commit 36aa291", "mini-rag-qa": "…"},
   "judge": {"model": "…", "version": "…"},
-  "threshold_rev": "…", "git_commit": "…", "started_at": "…", "exit": 0
+  "threshold_rev": "…", "git_commit": "…", "started_at": "…",
+  "degraded": false, "degraded_reason": null,   // 熔断/整批 aborted;true ⇒ exit 3 且阈值判定作废
+  "exit": 0
 }
 ```
 ```jsonc
@@ -45,7 +47,14 @@
 | `2` | conditional / human(judge 一致率存疑或 flag 需人工) | 人工复核后决定 |
 | `3` | 运行错误/熔断 degraded(如 `E_SUT_QUOTA`/aborted) | 不算全绿,告警 |
 
+**exit 3 触发谓词(2026-09-10 补,R0)**:
+1. 被测返回 `E_SUT_QUOTA`(契约 `评测-sut-adapter.md:34`)→ **整批 aborted**:触发条记 `fail`,其余未执行的 case 记 `verdict:"skipped"` 且**不再发请求**;`degraded=true`、`degraded_reason="E_SUT_QUOTA: …"`。
+2. `degraded=true` 时**阈值判定作废**:`blockers` 置空(不得据此报 `l2_task_completion` 未达标——本轮根本没跑完),仅以 exit 3 告警。
+3. 其余运行错误不动 exit:judge 单条调用失败 → 该 case 记 `fail` + `E_JUDGE_*` 理由,**run 继续**;被测其它错误(`E_SUT_TIMEOUT`/`5XX`/`4XX`/`AUTH`/`BAD_RESPONSE`)→ 该 case 记 `fail`,**run 继续**。
+
+> 承载字段:`degraded`(bool)+ `degraded_reason`(str|null),写在 run 记录里(见下)。
 > 教训预埋:CI 里 eval-gate 独立成 job,不与代码门合并成一个绿灯(`eval/README.md` 门禁②)。
 
 ## 变更记录
 - 2026-09-09 v0.1。
+- 2026-09-10 补 `exit 3 触发谓词` 与 `degraded`/`degraded_reason` 承载字段(R0 最小韧性加固;签核 D-10c)。
