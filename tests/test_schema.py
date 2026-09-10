@@ -5,7 +5,7 @@ import pytest
 
 from pathlib import Path
 
-from eval_gate.schema import SUPPORTED_SUTS, EvalError, load_evals
+from eval_gate.schema import SUPPORTED_SUTS, EvalError, count_modules, load_evals
 
 
 def write_json(path, obj) -> None:
@@ -126,3 +126,23 @@ def test_real_sut_golden_evalset_loads():
     det = [c for c in ev.cases if c.checks.deterministic_only]
     assert [c.id for c in det] == [38, 39, 40], "红队/越权须走确定性引擎,不进 judge"
     assert all(c.source for c in ev.cases), "转档须逐条标 source(可回溯)"
+
+
+def test_count_modules_empty_returns_empty_dict():
+    assert count_modules([]) == {}
+
+
+def test_count_modules_counts_per_module():
+    ev = load_evals(GOLDEN)
+    counts = count_modules(ev.cases)
+    assert counts == {"rag": 37, "eval": 3}
+    assert sum(counts.values()) == len(ev.cases)
+
+
+def test_count_modules_skips_nothing_when_module_repeats(tmp_path):
+    top = valid_top()
+    top["evals"].append(dict(top["evals"][0], id=2, input={"question": "另一问"}))
+    top["evals"].append(dict(top["evals"][0], id=3, module="tool-mcp", input={"question": "第三问"}))
+    p = tmp_path / "evals.json"
+    write_json(p, top)
+    assert count_modules(load_evals(p).cases) == {"rag": 2, "tool-mcp": 1}

@@ -149,3 +149,11 @@ def load_evals(path: str | Path) -> EvSet:
         version=version, threshold_ref=threshold_ref, cases=cases,
         sut_default=sut_default, sample=data.get("sample"), judge_cfg=data.get("judge"),
     )
+
+
+def count_modules(cases) -> dict:
+    """按 case.module 统计用例数,返回 {module: 次数};cases 为空则返回空 dict。"""
+    counts: dict[str, int] = {}
+    for case in cases:
+        counts[case.module] = counts.get(case.module, 0) + 1
+    return counts
