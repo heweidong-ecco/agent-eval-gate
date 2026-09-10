@@ -13,8 +13,8 @@
         "from_run": "20260910-221513-dde2e4d6",
         "observed": "根据现有资料，无法回答。现有资料只分别介绍了 Docker…和 Redis…，但上下文中没有说明二者可以如何配合使用。",
         "root_cause": "golden 期望超出语料本身：seed 语料只分别介绍 Docker 与 Redis，从未写「二者如何配合」。被测拒答实为合理行为。",
-        "status": "open",
-        "prevention": "待业务方在 R2b 复核该条：补语料，或把该条从评测集移除(预期与语料不匹配属评测集缺陷)"
+        "status": "accepted",
+        "prevention": "业务方 2026-09-10 决定：**保留该条**并标 accepted(承认 golden 期望超出语料，不因此删掉「组合式提问」这一覆盖类别)；**待办**：向被测知识库补一篇明确写「可用 Docker 容器化部署 Redis 服务」的语料，补后本应转 PASS"
       }
     },
     {
@@ -26,8 +26,8 @@
         "from_run": "20260910-221513-dde2e4d6",
         "observed": "根据现有资料，无法回答。现有资料分别介绍了 FastAPI 和 LangChain 各自是什么，但没有提到两者能否一起使用。",
         "root_cause": "同 id12：golden 期望(FastAPI 为 LangChain 应用提供 API)在语料中无对应表述，属期望超出语料。",
-        "status": "open",
-        "prevention": "待业务方在 R2b 复核该条留删；同类「组合式提问」应在转档时先核对语料是否支持"
+        "status": "accepted",
+        "prevention": "业务方 2026-09-10 决定：**保留该条**并标 accepted；**待办**：向被测知识库补一篇明确写「可用 FastAPI 为 LangChain 应用提供 API 接口」的语料。**教训**：转档时对「组合式提问」应先核对语料是否支持该组合，否则 golden 会带默认无法通过"
       }
     },
     {
