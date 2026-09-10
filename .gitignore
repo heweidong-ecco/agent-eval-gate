@@ -30,3 +30,6 @@ observability/.local/
 
 # 本地脚手架生成的样例(不入库;样例项目单独建仓)
 scaffold/_generated/
+
+# 避坑库变动检测的状态文件(每台机器各自维护)
+.claude/.kb-avoid-manifest
