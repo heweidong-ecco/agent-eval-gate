@@ -20,10 +20,19 @@ sid=$(printf '%s' "$payload" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*
 [ -n "$sid" ] || exit 0
 
 ROOT=$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd) || exit 0
-mkdir -p "$ROOT/.claude/traces" 2>/dev/null || exit 0
+# 输出目录可注入(测试用临时目录,不碰生产路径 —— 见 F1)
+TRACE_DIR="${SKILL_TRACE_DIR:-$ROOT/.claude/traces}"
+mkdir -p "$TRACE_DIR" 2>/dev/null || exit 0
 
 # 主会话 transcript
 main=$(find "$HOME/.claude/projects" -name "$sid.jsonl" 2>/dev/null | head -1)
+
+# 【F1 修复 · 2026-09-11】定位不到本会话 transcript → **一个字都不写**。
+#   反面教训:原先无条件覆写 latest.json,于是**未知 session_id(如测试自身)**
+#   把它写成 `skill_calls:0` —— 而 latest.json 正是**门 2 的唯一判定依据**。
+#   结果:跑一次 pytest 就毁掉证据链 → 之后所有实现类提交被误判「没调用过 skill」而拦下。
+#   **门禁的证据链,不能被任何自动化流程(含它自己的测试)写坏。**
+[ -n "$main" ] || exit 0
 # 子 Agent transcript(会话目录下的 tasks/*.output 是子 Agent 会话的 JSONL)
 subs=$(find /private/tmp /tmp -maxdepth 5 -path "*${sid}*/tasks/*.output" 2>/dev/null | head -50)
 
@@ -44,6 +53,6 @@ json=$(printf '{"session_id":"%s","at":"%s","skill_calls":%s,"skills":"%s","sour
   "$sid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$count" "$(printf '%s' "$uniq_skills" | sed 's/ *$//')" \
   "${main:-}" "$(printf '%s\n' $subs | sed '/^$/d' | wc -l | tr -d ' ')")
 
-printf '%s' "$json" > "$ROOT/.claude/traces/$sid.json" 2>/dev/null
-printf '%s' "$json" > "$ROOT/.claude/traces/latest.json" 2>/dev/null
+printf '%s' "$json" > "$TRACE_DIR/$sid.json" 2>/dev/null
+printf '%s' "$json" > "$TRACE_DIR/latest.json" 2>/dev/null
 exit 0
