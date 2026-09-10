@@ -69,6 +69,18 @@ def digest(text) -> dict:
     return {"len": len(s), "sha8": hashlib.sha256(s.encode("utf-8")).hexdigest()[:8]}
 
 
+def short_trace_id(trace_id) -> str:
+    """trace_id 的短形式(前 8 位),供人读的紧凑视图使用。
+
+    非字符串、或不足 8 位时返回空串 `""` —— 调用方(视图/报告)可能拿到 `None`
+    或畸形 id,这里**不抛异常**,免得一个坏 id 打断整棵树/整行日志的渲染。
+    仅用于显示;对外发/关联仍用完整 trace_id(规范 `trace_id-规范.md` §1)。
+    """
+    if isinstance(trace_id, str) and len(trace_id) >= 8:
+        return trace_id[:8]
+    return ""
+
+
 def _iso_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int(time.time_ns() % 1_000_000_000) // 1_000_000:03d}Z"
 

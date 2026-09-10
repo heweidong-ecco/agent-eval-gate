@@ -12,7 +12,8 @@ from pathlib import Path
 
 from eval_gate.cli import main
 from eval_gate.judge import FakeJudge
-from eval_gate.obs import KIND_ATTR, Tracer, digest, read_trace, render_tree
+from eval_gate.obs import (KIND_ATTR, Tracer, digest, new_trace_id, read_trace,
+                           render_tree, short_trace_id)
 from eval_gate.runner import default_thresholds, evaluate
 from eval_gate.schema import Case, Checks, EvSet, Expected
 
@@ -96,6 +97,27 @@ def test_tracer_disabled_is_silent_and_empty():
     tr = Tracer(enabled=False, log_stream=stream)
     _run(tr)
     assert tr.spans == [] and stream.getvalue() == ""
+
+
+# --- short_trace_id:给人读的短标识 --------------------------------------------
+
+def test_short_trace_id_takes_first_8_of_real_id():
+    tid = new_trace_id()
+    assert len(tid) == 32
+    assert short_trace_id(tid) == tid[:8]
+
+
+def test_short_trace_id_boundary_exactly_8():
+    assert short_trace_id("12345678") == "12345678"
+
+
+def test_short_trace_id_returns_empty_for_unusable_input():
+    """短于 8 位 / 非字符串一律空串,不抛异常(视图渲染不该被坏 id 打断)。"""
+    assert short_trace_id("abc") == ""
+    assert short_trace_id("") == ""
+    assert short_trace_id(None) == ""
+    assert short_trace_id(12345678) == ""
+    assert short_trace_id(["0123456789"]) == ""
 
 
 # --- ④ Trace 视图 + OTLP 形状 -------------------------------------------------
