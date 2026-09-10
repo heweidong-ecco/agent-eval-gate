@@ -38,9 +38,10 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 - 进度:阶段1/2 **业务方逐条签核 D-1..D-9(2026-09-10)**;阶段3 P3-1 首跑 `app/eval_gate/` E1–E7 竖切 + fastapi-rag 适配器 + CI 示例,`pytest` 47 passed(离线零外网),good→exit0 / bad→exit1 被拦。真实被测:`01.FastAPI RAG Agent`(切 DeepSeek,commit `36aa291`)。
 - **P3 收口顺序已签核(D-10a..D-10h,2026-09-10)** —— grilling 定调压测门通过后修订 D-9:顺序 = **R0 → R2a → R1 → R2b → R3 → R4**;R3 升级为 **R4 硬前置**;契约补丁三处。过程数据 `notes/grilling/P3-1优先级-2026-09-10.md`,签核 `docs/decisions/定调复核-签核记录.md`。
 - **阶段门纪律**:gate-review 出建议、终裁 = 业务方签核(本指针/节点 ✔ 均以此为准,不再自评 PASS)。
-- **进度(2026-09-10)**:R0 ✅(`3ef5439`)、R2a ✅(`a740936`)、R1a 快照冒烟 ✅(`78a2482`,`6d5dbdd`)、**R3 观测左移 ✅(本轮)**。`pytest` 76 passed / 2 skipped(离线零外网)。
-- **R1a 结果**:30/40 通过、exit 1;失败 10 条**全部与被测质量无关**(知识库未 seed 6+1、快照未覆盖的自造对抗 3)。
-- **关键结论**:**不先 seed 就标定阈值 = 把「知识库覆盖不足」误判成「被测质量差」** —— 契约 `评测-sut-adapter.md:42` 的「自带 golden 文档集 + seed 步骤」是 R2b 的前置。
-- **剩余**:R1b 活链路冒烟(**待你重启后 Docker 恢复**;需有效被测 API key + 授权 seed)→ R2b 标定 → R4 阶段3 门禁验收(业务方判 PASS)。
-- **可选的零 Docker 项**:R1a-2(快照 + **真实 judge**,需你给 `EVAL_JUDGE_*` 密钥,补 L1/L2 真实数据);横向(CI 放开 `EVAL_LIVE` 示例)。
+- **进度(2026-09-10)**:R0 ✅、R2a ✅、R1a ✅、R3 ✅、**R1b 活链路冒烟 ✅(本轮)**。`pytest` 76 passed / 2 skipped(离线)。
+- **R1b 结果**:真实被测 + 真实 `deepseek-chat` judge,**34/40 通过(0.85)、exit 1**;失败 6 条**全部归因被测侧**(5 拒答 + 1 计数错误);**拒答 10/10、红队/越权 3/3 全过**。
+- **被测运行方式(关键,零改动)**:被测仓库 **`36aa291` 未改一行**;本机 `python3.10` venv `/tmp/sut-lite-venv` + 启动器 `/tmp/sut_run.py`(前置 `/tmp/sut-shim` 假模块 `gradio`/`cost_dashboard`/`api_v1_agent`,并把 langchain 1.x 迁走的 legacy agent API 从 `langchain_classic` 补回)。**不设 `DOCKER_ENV`** → 自动连 localhost 的 postgres/redis 容器。
+- **踩过的坑(已修,记在 `.env` / `.env.example`)**:① 被测 `localhost` 会解析到 IPv6 打到 Docker 的崩溃容器 → 改 **`127.0.0.1`**;② 本机 TLS 拦截,venv 默认 CA 不含其 CA → 设 **`SSL_CERT_FILE=/etc/ssl/cert.pem`**(备选:certifi 的 cacert.pem);③ pip 装 `cryptography` 需 `--prefer-binary`(Intel Mac 无 arm64 wheel 会退化成源码编译,而本机无 Rust)。
+- **下一步**:**R2b 标定阈值**(北极星/L1/L2/L3 → 回填 `eval/阈值.md` 与 `总纲.md` §4)→ **R4 阶段3 门禁验收(业务方判 PASS)**。
+- **待业务方在 R2b 复核**:idx26「Python 适合哪些人学习?」标准答案含「文档未明确说明」,是半拒答;以及 id12/14 类「golden 期望超出语料本身」的条目是否保留。
 - **挂起项**:被测知识库有无文档(R1 开头探针自证);母体 Kit 缺陷观察项(证据 1/2,停观察态,不落本仓表)。
