@@ -322,6 +322,36 @@ def test_skill_trace_writes_only_when_session_transcript_found(tmp_path):
     assert "test-driven-development" in d["skills"]
 
 
+def test_skill_trace_adds_volume_and_kind_fields(tmp_path):
+    """口径字段:调用**次数**(量)与**种类**(覆盖)必须同时可见。
+
+    背景:KD-9 的病是**种类错了**(grilling / update-config,与写码无关),**不是次数少了**。
+    拿「Skill 次数 vs Bash 次数」作验收是**粒度错位** —— Skill 每**工作单元**加载一次,
+    Bash 每**条命令**一次,一个完全合规的会话可以是 4 次 Skill / 290 次 Bash,
+    这个比值没有阈值可言。让两个口径同时可见,杜绝今后再用错口径争论。
+    """
+    sid = "cafe0000-0000-0000-0000-000000000000"
+    proj = tmp_path / ".claude" / "projects" / "p"
+    proj.mkdir(parents=True)
+    (proj / f"{sid}.jsonl").write_text(
+        '{"name":"Skill","input":{"skill":"test-driven-development"}}\n'
+        '{"name":"Skill","input":{"skill":"test-driven-development"}}\n'
+        '{"name":"Skill","input":{"skill":"verification-before-completion"}}\n'
+        '{"name":"Bash","input":{"command":"ls"}}\n'
+        '{"name":"Bash","input":{"command":"ls"}}\n'
+        '{"name":"Bash","input":{"command":"ls"}}\n'
+        '{"name":"Edit","input":{"file_path":"x"}}\n', encoding="utf-8")
+    outdir = tmp_path / "traces"
+    r = _run(HOOKS / "skill-trace.sh", json.dumps({"session_id": sid}),
+             {"SKILL_TRACE": "1", "SKILL_TRACE_DIR": str(outdir), "HOME": str(tmp_path)})
+    assert r.returncode == 0
+    d = json.loads((outdir / "latest.json").read_text(encoding="utf-8"))
+    assert d["skill_calls"] == 3, d        # 量:调用次数
+    assert d["kinds"] == 2, d              # 覆盖:去重后的种类数
+    assert d["bash_calls"] == 3, d         # 对照量(仅供参照,不设阈值)
+    assert d["edit_calls"] == 1, d
+
+
 def test_skill_trace_writes_machine_readable_json(tmp_path):
     """写出的 trace 字段齐备(hermetic:临时 HOME + 临时输出目录,不碰生产路径)。"""
     sid = "beef0000-0000-0000-0000-000000000000"

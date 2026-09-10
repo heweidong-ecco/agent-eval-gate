@@ -37,21 +37,30 @@ main=$(find "$HOME/.claude/projects" -name "$sid.jsonl" 2>/dev/null | head -1)
 subs=$(find /private/tmp /tmp -maxdepth 5 -path "*${sid}*/tasks/*.output" 2>/dev/null | head -50)
 
 skills=""
+bash_n=0
+edit_n=0
 for f in "$main" $subs; do
   [ -n "$f" ] || continue
   [ -f "$f" ] || continue
   s=$(grep -o '"name":"Skill","input":{"skill":"[^"]*"' "$f" 2>/dev/null | sed 's/.*"skill":"//; s/"$//')
   [ -n "$s" ] && skills=$(printf '%s\n%s\n' "$skills" "$s")
+  # 口径字段的原始素材:次数(量)与种类(覆盖)必须**同时可见** ——
+  # 拿「Skill 次数 vs Bash 次数」比是**粒度错位**(Skill 每工作单元一次,Bash 每命令一次),
+  # 该比值没有阈值。此处只采集事实,**不设阈值、不做门禁**。
+  bash_n=$((bash_n + $(grep -o '"name":"Bash"' "$f" 2>/dev/null | wc -l | tr -d ' ')))
+  edit_n=$((edit_n + $(grep -o '"name":"Edit"' "$f" 2>/dev/null | wc -l | tr -d ' ')))
 done
 
 # 去重 + 计数(去掉空行)
 uniq_skills=$(printf '%s\n' "$skills" | sed '/^$/d' | LC_ALL=C sort | uniq -c | awk '{printf "%s(%s) ", $2, $1}')
 
 count=$(printf '%s\n' "$skills" | sed '/^$/d' | wc -l | tr -d ' ')
+# 种类数(去重):**失效判据看这个** —— KD-9 的病是"种类错了"(与工作无关),不是次数少了
+kinds=$(printf '%s\n' "$skills" | sed '/^$/d' | LC_ALL=C sort -u | wc -l | tr -d ' ')
 
-json=$(printf '{"session_id":"%s","at":"%s","skill_calls":%s,"skills":"%s","sources":{"main":"%s","subagents":%s}}\n' \
-  "$sid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$count" "$(printf '%s' "$uniq_skills" | sed 's/ *$//')" \
-  "${main:-}" "$(printf '%s\n' $subs | sed '/^$/d' | wc -l | tr -d ' ')")
+json=$(printf '{"session_id":"%s","at":"%s","skill_calls":%s,"kinds":%s,"skills":"%s","bash_calls":%s,"edit_calls":%s,"sources":{"main":"%s","subagents":%s}}\n' \
+  "$sid" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$count" "$kinds" "$(printf '%s' "$uniq_skills" | sed 's/ *$//')" \
+  "$bash_n" "$edit_n" "${main:-}" "$(printf '%s\n' $subs | sed '/^$/d' | wc -l | tr -d ' ')")
 
 printf '%s' "$json" > "$TRACE_DIR/$sid.json" 2>/dev/null
 printf '%s' "$json" > "$TRACE_DIR/latest.json" 2>/dev/null
