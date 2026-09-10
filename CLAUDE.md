@@ -79,12 +79,14 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 
 ## 当前指针(随推进更新 — 上次更新 2026-09-11)
 - `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:`main | 阶段3 ✅ 收口(业务方判 PASS,D-11)→ 阶段4-步骤8(未开工)| E1–E9 已实现 | L2 任务完成率 ≥0.80(基线 0.85–0.925) | 劣化被拦次数 = 1`
-- **门禁自腐 F1/F2 已修(2026-09-11,`7110809`)** —— 见 `docs/复盘/2026-09-11-门禁自腐与盲测2.md`:
-  - **F1** ✅(曾严重):测试用假 session_id 跑真 `skill-trace.sh` → 覆写 `.claude/traces/latest.json` 为 `skill_calls:0`,**跑一次 `pytest` 就毁掉门 2 判定依据**。已加「定位不到本会话 transcript → 一个字都不写」守卫 + `SKILL_TRACE_DIR` 可注入;回归测试**突变验证**过。
-  - **F2** ✅:门禁测试与工作区状态耦合(正常 TDD 中必红)。已改为**临时仓库隔离**;脏/净工作区实测均 163 passed。
-  - **仍未解决**:F3 长任务无断点保护(会话超上下文上限即中断,关键结论随之丢失;`c549c42a` 实证)→ 候选 Kit 缺陷,观察态。
+- **✅ 两个严重问题已修(2026-09-11)** —— 详见 ROADMAP「本轮完成」与 `notes/blind-test/`:
+  - **问题 A(skills 不触发 / KD-9)**:三个口子已堵 —— ①**可规避**改为检测留痕(豁免必须带理由 `[no-test: <理由>]`;`.githooks/post-commit` 绕过留痕,**不受 `--no-verify` 抑制**;CI 用 `tools/check_gate_bypass.py` **逐提交重算**);②拦截力复测(见下,未测到);③用量**修口径不修量级**(失效判据 = **种类覆盖**,不是次数)。
+  - **问题 B(子 Agent 拿不到纪律 / 新登记 KD-10)**:`.claude/hooks/subagent-guard.sh`(SubagentStart)**把纪律注入子 Agent 上下文** —— 实机验证到达(`hook_additional_context`),且子 Agent **照注入第 6 条报告了格式**(行为被改变)。到达可证伪:`tools/check_subagent_injection.py`。
+  - **F1/F2/F5 全修**:F1(测试污染门 2 证据链)、F2(门禁测试与工作区耦合)、**F5(`impl-guard` 判据锚错仓库 → 在另一检出改实现会误弹 ask → 挂死子 Agent)**。
+  - **⚠️ 仍未解决**:① **F3** 长任务无断点保护;② **门禁「拦截力」至今只有盲测 2 的 2/2 证据** —— 盲测 4 想复测,结论是「**藏不住**」(Agent 动手前就 `git config core.hooksPath` 并 `cat` 了仓外门禁源码),**要复测须让"侦察"本身失效,而非藏文件**。
+  - **母体登记已回写**(`product-agent-dev-os` `e7700dd`):KD-9 补证据③ + **新建 KD-10** + 回流差异清单 14 项;**母体代码零改动,等业务方审批后回流**。
   > **交接背景**:上一会话 `c549c42a` 在 **1,017,378 tokens** 时 `API Error 400` 中断 —— **该会话不可 `--resume`**(会原样撞同一上限)。断点状态已从 transcript 抢救落盘(ROADMAP + 本指针 + `docs/复盘/`)。
-  > **另**:`.claude/hooks/` 下的门禁脚本**不在门 1/门 2 的覆盖范围**(两道门只认 `app|backend|src`)—— 改门禁脚本不会被任何门检查,需人工留意。
+  > **另**:`.claude/hooks/` 下的门禁脚本**不在门 1/门 2 的覆盖范围**(两道门只认 `app|backend|src`)—— 改门禁脚本不会被任何门检查,需人工留意(**待业务方定夺是否扩范围**)。
 - **门禁硬化已落地(2026-09-11 凌晨,8 个 commit)**:skills 三层结构(锚点对应表 → hook 哨兵 → CI 检查)+ **门禁左移**(`impl-guard.sh`,PreToolUse ask)+ **门 1/门 2**(commit-msg:认实现先于测试 + 未调用 `test-driven-development` 即拒提交)。**盲测实证 2/2 复现**:两个空上下文子 Agent 均被门 1/门 2 拦下,并**主动调用 `test-driven-development` 回退重做**。策略沉淀在 `~/Desktop/知识库/18.Agent避坑库-问题解决策略/` 01·02(§4.9)·03。
 - 进度:阶段1/2 **业务方逐条签核 D-1..D-9(2026-09-10)**;阶段3 P3-1 首跑 `app/eval_gate/` E1–E7 竖切 + fastapi-rag 适配器 + CI 示例,`pytest` 47 passed(离线零外网),good→exit0 / bad→exit1 被拦。真实被测:`01.FastAPI RAG Agent`(切 DeepSeek,commit `36aa291`)。
 - **P3 收口顺序已签核(D-10a..D-10h,2026-09-10)** —— grilling 定调压测门通过后修订 D-9:顺序 = **R0 → R2a → R1 → R2b → R3 → R4**;R3 升级为 **R4 硬前置**;契约补丁三处。过程数据 `notes/grilling/P3-1优先级-2026-09-10.md`,签核 `docs/decisions/定调复核-签核记录.md`。
