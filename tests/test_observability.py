@@ -13,7 +13,7 @@ from pathlib import Path
 from eval_gate.cli import main
 from eval_gate.judge import FakeJudge
 from eval_gate.obs import (KIND_ATTR, Tracer, digest, new_trace_id, read_trace,
-                           render_tree, short_trace_id)
+                           render_tree, short_trace_id, span_name)
 from eval_gate.runner import default_thresholds, evaluate
 from eval_gate.schema import Case, Checks, EvSet, Expected
 
@@ -118,6 +118,19 @@ def test_short_trace_id_returns_empty_for_unusable_input():
     assert short_trace_id(None) == ""
     assert short_trace_id(12345678) == ""
     assert short_trace_id(["0123456789"]) == ""
+
+
+# --- span_name:kind + 具体对象拼出可读 span 名 -------------------------------
+
+def test_span_name_joins_kind_and_ident():
+    assert span_name("sut.call", "abc") == "sut.call/abc"
+
+
+def test_span_name_keeps_kind_action_shape_readable():
+    """`{module}.{action}` 前缀不变,ident 只作后缀 —— 视图里仍可按模块归位。"""
+    name = span_name("judge.grade", "case-12")
+    assert name == "judge.grade/case-12"
+    assert name.split(".", 1)[0] == "judge"
 
 
 # --- ④ Trace 视图 + OTLP 形状 -------------------------------------------------

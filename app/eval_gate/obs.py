@@ -54,6 +54,15 @@ def new_span_id() -> str:
     return secrets.token_hex(8)
 
 
+def span_name(kind: str, ident) -> str:
+    """拼 span 名:`{kind}/{ident}`(如 `sut.call/abc`)—— 同一动作下按对象区分。
+
+    `kind` 沿用 `{module}.{action}`(规范 §3),故 `Span.module/action` 仍可从
+    前缀取出;ident 只作后缀,不参与 `{module}.{action}` 语义(视图里按模块归位不受影响)。
+    """
+    return f"{kind}/{ident}"
+
+
 def digest(text) -> dict:
     """脱敏摘要:只留长度与 sha256 前 8 位 —— 日志里**永不**出现原文。
 
