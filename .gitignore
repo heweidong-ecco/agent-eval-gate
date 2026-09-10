@@ -36,3 +36,6 @@ scaffold/_generated/
 
 # Python 构建产物(pip install -e . 生成)
 *.egg-info/
+
+# skill 调用 trace(本机本会话事实,不入库)
+.claude/traces/

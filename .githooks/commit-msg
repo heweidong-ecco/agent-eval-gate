@@ -1,44 +1,73 @@
 #!/bin/sh
-# commit-msg:TDD 痕迹**本地硬门**(提交时就拦,比 CI 早一步)。
+# commit-msg —— 本地硬门(**终局兜底**;左移门见 .claude/hooks/impl-guard.sh)
 #
-# 依据:母体 KD-9 ——「skills 装了却从不调用」的根因是缺触发与硬门。
-#   本 hook 是「写码不走 test-driven-development」这一条**唯一可机器检测**的痕迹
-#   (代理指标:改实现却没改测试)。它是弱代理,但属于"躲不掉"那一类。
+# 【门 1】TDD 痕迹:改了实现文件却没改测试 → 拒绝。豁免:提交信息含 [no-test]
+# 【门 2】skill 痕迹:改了实现文件,但本会话**没有调用过 `test-driven-development`** → 拒绝。
+#          豁免:提交信息含 [no-skill]
 #
-# 启用(每仓一次):git config core.hooksPath .githooks
-# 豁免(必须显式):提交信息里加 [no-test] 并说明理由(纯重构/配置改动)
-# 强跳过(不推荐):git commit --no-verify —— 请在 PR/提交里说明为何绕过
+# 依据:母体 KD-9 + 2026-09-11 盲测实证。
+#   【门 2 的由来】曾判定「skill 调用不落 git → 无法强制」——**只对了一半**。
+#   CI 看不见,但 **hook 能看见**:Skill 调用落在本机 session transcript 里,
+#   由 `.claude/hooks/skill-trace.sh` 抽成 `.claude/traces/latest.json`。
+#   于是"该调用 skill 却跳过"从**软约束变成可机器校验的硬门**。
 #
-# 参数:$1 = 本次提交信息文件路径(git 传给 commit-msg hook)
+# 参数:$1 = git 传入的提交信息文件路径
 
+set -u
 msgfile="${1:-}"
-if [ -n "$msgfile" ] && [ -f "$msgfile" ] && grep -q '\[no-test\]' "$msgfile" 2>/dev/null; then
-  exit 0
-fi
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+msg=$(cat "$msgfile" 2>/dev/null || true)
 
-# 暂存区(本次真正要提交的文件),排除删除
 CHANGED=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
-
 SRC=$(printf '%s\n' "$CHANGED" | grep -cE '^(app|backend|src)/.*\.(py|ts|js)$' || true)
 TST=$(printf '%s\n' "$CHANGED" | grep -cE '(^|/)tests?/.*\.(py|ts|js)$' || true)
 
-if [ "$SRC" -gt 0 ] && [ "$TST" -eq 0 ]; then
+[ "$SRC" -gt 0 ] || exit 0     # 本次不动实现目录 → 两道门都不适用
+
+# ---------- 门 1:TDD 痕迹 ----------
+if [ "$TST" -eq 0 ] && ! printf '%s' "$msg" | grep -q '\[no-test\]'; then
   cat >&2 <<EOF
 
-✗ TDD 痕迹检查未通过(母体 KD-9)
+✗ 门 1(commit-msg)未通过:改了实现却无测试
 
-  本次暂存了 $SRC 个实现文件,但没有改任何测试:
-$(printf '%s\n' "$CHANGED" | grep -E '^(app|backend|src)/.*\.(py|ts|js)$' | sed 's/^/    /')
-
-  请二选一:
-    1) 先写测试 —— 调用 test-driven-development skill 再提交;
-    2) 若确为纯重构/配置改动,在提交信息里加 [no-test] 并说明理由,例如:
-         git commit -m "refactor: 提取公共函数 [no-test]
-
-         [no-test] 纯重命名,行为不变,无需新增测试"
+  本次暂存实现文件 $SRC 个,测试文件 0 个。
+  二选一:
+    1) 先写测试(走 test-driven-development),或
+    2) 若确为纯重构/配置改动,提交信息里加 [no-test] 并说明理由。
 
   (绕过:git commit --no-verify —— 请说明为何绕过)
 EOF
   exit 1
 fi
-exit 0
+
+# ---------- 门 2:skill 痕迹(该调用却跳过)----------
+printf '%s' "$msg" | grep -q '\[no-skill\]' && exit 0
+
+TRACE="$ROOT/.claude/traces/latest.json"
+sid=$(sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TRACE" 2>/dev/null | head -1)
+if [ -z "$sid" ]; then
+  printf '⚠ 门 2 跳过:本机尚无 skill trace(.claude/traces/latest.json)。\n' >&2
+  exit 0
+fi
+# 提交发生在会话中途(Stop hook 尚未跑),故此处**先刷新**再判
+printf '{"session_id":"%s"}' "$sid" | SKILL_TRACE=1 "$ROOT/.claude/hooks/skill-trace.sh" 2>/dev/null || true
+
+if grep -q 'test-driven-development' "$TRACE" 2>/dev/null; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+
+✗ 门 2(commit-msg)未通过:改了实现,但本会话**没有调用过 test-driven-development**
+
+  本会话的 Skill 调用记录(来自 $(basename "$TRACE")):
+    $(sed -n 's/.*"skills":"\([^"]*\)".*/    \1/p' "$TRACE" 2>/dev/null)
+
+  二选一:
+    1) 调用 'test-driven-development' skill 走一遍(先写会失败的测试),再提交;
+    2) 若本次无需(如纯配置/文档性质),提交信息里加 [no-skill] 并说明理由。
+
+  (依据:母体 KD-9;本门把"该调用 skill 却跳过"从软约束变成可机器校验 ——
+   见 避坑库 02 与 docs/复盘/)
+EOF
+exit 1

@@ -25,6 +25,10 @@
           {
             "type": "command",
             "command": "SKILL_SENTINEL=1 .claude/hooks/skill-sentinel.sh"
+          },
+          {
+            "type": "command",
+            "command": "SKILL_TRACE=1 .claude/hooks/skill-trace.sh"
           }
         ]
       }
