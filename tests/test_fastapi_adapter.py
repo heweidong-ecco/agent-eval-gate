@@ -42,7 +42,8 @@ def test_fastapi_adapter_builds_request_and_maps_response():
     out = a.run_case(case_for("Python 哪一年发布?"))
 
     assert "/api/v1/rag/search" in captured["url"]
-    assert "mode=accurate" in captured["url"]
+    # 默认取被测 API 的默认 mode(api_v1_rag.py:460);accurate/full 需被测侧本地重排模型
+    assert captured["url"].endswith("mode=accurate_norerank")
     assert captured["payload"]["question"] == "Python 哪一年发布?"
     assert captured["payload"]["generate_answer"] is True
     assert captured["payload"]["top_k"] == 3

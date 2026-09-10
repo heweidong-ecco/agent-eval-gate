@@ -90,8 +90,11 @@ class FastApiRagAdapter(SutAdapter):
     id = "fastapi-rag"
 
     def __init__(self, base_url: str | None = None, api_key: str | None = None,
-                 post: Callable | None = None, top_k: int = 3, mode: str = "accurate",
+                 post: Callable | None = None, top_k: int = 3, mode: str = "accurate_norerank",
                  quality: str | None = None, snapshot: str | Path | None = None):
+        # mode 取**被测 API 的默认值**(api_v1_rag.py:460)。开重排(accurate/full)需要被测侧
+        # 本地 CrossEncoder 模型(`reranker.py:14` 的 sentence-transformers + BAAI/bge-reranker-v2-m3),
+        # 评测门不引入该重型依赖;且默认口径更能代表被测的生产行为。见 D-10i。
         # quality = 「被测 prompt 改好/改坏」旋钮,只有自证用被测 mini-rag-qa 有;
         # 真实被测无此旋钮 → 接收并忽略(适配器对 E5 调度层保持同一签名)。
         self.base_url = (base_url or os.getenv("EVAL_SUT_FASTAPI_BASE_URL", "http://localhost:8000")).rstrip("/")

@@ -35,7 +35,9 @@ class SutAdapter:
 | `E_SUT_BAD_RESPONSE` | 响应无法解析/无 answer | 记证据,该 case fail |
 
 ## fastapi-rag 适配器(真实被测 · 映射)
-- 被测:`01.FastAPI RAG Agent`(`/rag/search?mode=accurate` + body 生成答案)。
+- 被测:`01.FastAPI RAG Agent`(`/rag/search?mode=accurate_norerank` + body 生成答案)。
+  - **mode 取被测 API 的默认值**(`api_v1_rag.py:460`)。`accurate`/`full` 会启用**被测侧本地重排模型**(`reranker.py:14` 的 `sentence-transformers` CrossEncoder `BAAI/bge-reranker-v2-m3`),评测门不引入该重型依赖;**默认口径也更代表被测的生产行为**(2026-09-10 变更,签核 D-10i;原写 `mode=accurate`)。
+  - **口径影响**:重排开/关会改变检索结果与答案,故不同 mode 的运行**不可直接比较**。
 - 请求:header 鉴权(`X-API-Key` 或 JWT;凭证只从本仓 `.env`/密钥托管读,不硬编码、不入库);body `{question, top_k:3, generate_answer:true, citations:true}`;`mode` 走 URL query。
 - 响应映射:resp.`answer` → SutOutput.answer;`sources` → SutOutput.sources;`docs` 存 raw(脱敏)。
 - 治理:限速 ≤ 被测配额(该被测用户级 ~3 req/s → 适配器内置 pacing/退避);依赖其 DashScope embedding(检索)正常、生成侧可切任意 OpenAI 兼容(被测仓 commit `36aa291`)。
@@ -46,3 +48,4 @@ class SutAdapter:
 
 ## 变更记录
 - 2026-09-09 v0.1。
+- 2026-09-10 `mode` 由 `accurate` 改为 **`accurate_norerank`**(被测 API 默认值;`accurate` 需被测侧本地重排模型 = `sentence-transformers`/`torch`,评测门不引入)。签核 D-10i。
