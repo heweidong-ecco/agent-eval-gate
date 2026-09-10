@@ -70,11 +70,16 @@ class SutAdapter:
 
 
 class SutAdapterError(Exception):
-    """带错误分级的被测错误(供 E5 重试/熔断判定)。"""
+    """带错误分级的被测错误(供 E5 重试/熔断判定)。
 
-    def __init__(self, code: SutErrorCode, message: str):
+    `status` = 被测 HTTP 状态码(非 HTTP 失败如超时/快照未覆盖时为 None);
+    E5 靠它区分 `429`(限速重试)与其它 4xx(契约 `评测-sut-adapter.md:32` fail-fast)。
+    """
+
+    def __init__(self, code: SutErrorCode, message: str, status: int | None = None):
         super().__init__(f"[{code.name}] {message}")
         self.code = code
+        self.status = status
 
 
 class FastApiRagAdapter(SutAdapter):
@@ -166,10 +171,10 @@ class FastApiRagAdapter(SutAdapter):
                              meta={"sut": self.id, "http_status": status})
         if status in (401, 403):
             code = SutErrorCode.E_SUT_AUTH if status == 401 else SutErrorCode.E_SUT_QUOTA
-            raise SutAdapterError(code, str(data.get("detail") or data))
+            raise SutAdapterError(code, str(data.get("detail") or data), status=status)
         if status >= 500:
-            raise SutAdapterError(SutErrorCode.E_SUT_5XX, f"被测 5xx: {status} {data}")
-        raise SutAdapterError(SutErrorCode.E_SUT_4XX, f"被测 4xx: {status} {data}")
+            raise SutAdapterError(SutErrorCode.E_SUT_5XX, f"被测 5xx: {status} {data}", status=status)
+        raise SutAdapterError(SutErrorCode.E_SUT_4XX, f"被测 4xx: {status} {data}", status=status)
 
 
 class MiniRagQaAdapter(SutAdapter):

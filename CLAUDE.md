@@ -44,7 +44,8 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 - **踩过的坑(已修,记在 `.env` / `.env.example`)**:① 被测 `localhost` 会解析到 IPv6 打到 Docker 的崩溃容器 → 改 **`127.0.0.1`**;② 本机 TLS 拦截,venv 默认 CA 不含其 CA → 设 **`SSL_CERT_FILE=/etc/ssl/cert.pem`**(备选:certifi 的 cacert.pem);③ pip 装 `cryptography` 需 `--prefer-binary`(Intel Mac 无 arm64 wheel 会退化成源码编译,而本机无 Rust)。
 - **进度(2026-09-10 续)**:**R2b 已标定**(`eval/阈值.md` + `总纲.md` §4 全填真实值;北极星基线 = **1**,由劣化演示取得 —— 改被测拒答指令 → 红队突破 2 → 被 `redteam_zero`+`l2` 拦下,被测已还原)。**首次 exit 0**:复跑 37/40(0.925)。
 - **下一步**:**R4 阶段3 门禁验收(业务方判 PASS)**;R4 前建议先补 **阈值接线**(见下)。
-- **R2b 遗留 2 项(不阻塞 R4,但要让门真的生效)**:① **`eval/阈值.md` 未被任何代码读取** —— `runner.default_thresholds()` 仍是硬编码 0.9 演示值,故标定值**不生效**;建议加机读 `eval/阈值.json` 并让 `default_thresholds()` 优先读。② 基线单轮波动达 **7.5pp**(0.85 / 0.925),`eval/README.md:24` 要求的 N 次 A/B + p-value 未做,阈值只能作 v1 粗门。
+- **R2b 遗留已清**:① ~~阈值未接线~~ → ✅ 已修(机读 `eval/阈值.json` + `default_thresholds()` 优先读,**缺配置回落更严兜底**,契约测试守住);② 基线单轮波动 **7.5pp**(0.85/0.90/0.925),`eval/README.md:24` 的 N 次 A/B + p-value **仍未做** → 阈值只能作 v1 粗门(不阻塞 R4,但判不了微小退化)。
+- **R4 前收口的两条(本轮补完)**:**#3 重试退避** ✅(`E_SUT_TIMEOUT`/`5XX`→指数退避≤2、`429`→限速退避、其余 4xx→fail-fast;judge 超时重试 1 次;参数按 R1b 实测延迟定 1s 基数)/ **#7 P3-2 存储策略** ✅(`docs/specs/P3-2-存储策略.md`:逐项判「落地/不适用」并给依据)。**B 阶段3 门禁 7 条现已全部可判**。
 - **环境备查**:被测本地运行需 `/tmp/sut-run` 脚手架 + `/tmp/sut-lite-venv`;`rag-api` 容器已被停(它崩溃重启 304 次且抢 8000 端口),恢复命令 `docker start rag-api`。
 - **待业务方在 R2b 复核**:idx26「Python 适合哪些人学习?」标准答案含「文档未明确说明」,是半拒答;以及 id12/14 类「golden 期望超出语料本身」的条目是否保留。
 - **挂起项**:被测知识库有无文档(R1 开头探针自证);母体 Kit 缺陷观察项(证据 1/2,停观察态,不落本仓表)。

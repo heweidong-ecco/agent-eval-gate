@@ -11,12 +11,16 @@ R0 前的缺陷:judge 抛异常会穿出 evaluate → CLI 三层无捕获 → �
 """
 import json
 
-from eval_gate.adapters import SutAdapter, SutAdapterError, SutErrorCode, register_adapter
+import pytest
+
+from eval_gate.adapters import (REGISTRY, SutAdapter, SutAdapterError, SutErrorCode,
+                                SutOutput, register_adapter)
 from eval_gate.cli import main
 from eval_gate.config import JudgeConfig
 from eval_gate.judge import FakeJudge, Judge, JudgeError
-from eval_gate.runner import default_thresholds, evaluate
+from eval_gate.runner import _sut_call_with_retry, default_thresholds, evaluate
 from eval_gate.schema import Case, Checks, EvSet, Expected
+import eval_gate.runner as runner_mod
 
 QUOTA_SUT = "r0-quota-stub"
 
@@ -128,11 +132,104 @@ def test_healthy_run_is_not_degraded():
 
 # --- ④ R0 验收:CLI 级离线故障注入(端到端) -----------------------------------
 
+# ---- E5 重试退避(契约 评测-sut-adapter.md:30-32)--------------------------
+
+RETRY_SUT = "r1b-retry-stub"
+
+
+class _FlakyAdapter(SutAdapter):
+    """前 `fail_times` 次抛指定错误码,之后成功。"""
+
+    id = RETRY_SUT
+
+    def __init__(self, fail_times, code, status=None, counter=None, answer="ok"):
+        self.fail_times, self.code, self.status = fail_times, code, status
+        self.counter = counter if counter is not None else []
+        self.answer = answer
+
+    def run_case(self, case):
+        self.counter.append(1)
+        if len(self.counter) <= self.fail_times:
+            raise SutAdapterError(self.code, "boom", status=self.status)
+        return SutOutput(answer=self.answer)
+
+
+def _flaky(monkeypatch, fail_times, code, status=None):
+    counter = []
+    monkeypatch.setitem(REGISTRY, RETRY_SUT,
+                        lambda **_kw: _FlakyAdapter(fail_times, code, status, counter))
+    monkeypatch.setattr(runner_mod, "SUT_BACKOFF_S", 0.0)          # 测试不等退避
+    monkeypatch.setattr(runner_mod, "SUT_RATE_LIMIT_BACKOFF_S", 0.0)
+    return counter
+
+
+def _call(case):
+    return _sut_call_with_retry(REGISTRY[RETRY_SUT](), case)
+
+
+def test_sut_timeout_is_retried(monkeypatch):
+    counter = _flaky(monkeypatch, fail_times=2, code=SutErrorCode.E_SUT_TIMEOUT)
+    out = _call(_case(1, RETRY_SUT))
+    assert out.answer == "ok"
+    assert len(counter) == 3, "总尝试应为 1 + SUT_RETRIES(2)"
+
+
+def test_sut_5xx_is_retried(monkeypatch):
+    counter = _flaky(monkeypatch, fail_times=1, code=SutErrorCode.E_SUT_5XX, status=503)
+    assert _call(_case(1, RETRY_SUT)).answer == "ok"
+    assert len(counter) == 2
+
+
+def test_sut_429_is_retried(monkeypatch):
+    counter = _flaky(monkeypatch, fail_times=1, code=SutErrorCode.E_SUT_4XX, status=429)
+    assert _call(_case(1, RETRY_SUT)).answer == "ok"
+    assert len(counter) == 2
+
+
+def test_sut_4xx_non_429_is_fail_fast(monkeypatch):
+    """契约:非 429 的业务 4xx → 该 case fail-fast,**不重试**。"""
+    counter = _flaky(monkeypatch, fail_times=99, code=SutErrorCode.E_SUT_4XX, status=400)
+    with pytest.raises(SutAdapterError):
+        _call(_case(1, RETRY_SUT))
+    assert len(counter) == 1
+
+
+def test_sut_quota_is_not_retried(monkeypatch):
+    """配额耗尽 → 整批 aborted,重试没有意义。"""
+    counter = _flaky(monkeypatch, fail_times=99, code=SutErrorCode.E_SUT_QUOTA, status=403)
+    with pytest.raises(SutAdapterError):
+        _call(_case(1, RETRY_SUT))
+    assert len(counter) == 1
+
+
+def test_retries_give_up_and_raise_original_error(monkeypatch):
+    counter = _flaky(monkeypatch, fail_times=99, code=SutErrorCode.E_SUT_TIMEOUT)
+    with pytest.raises(SutAdapterError) as e:
+        _call(_case(1, RETRY_SUT))
+    assert e.value.code is SutErrorCode.E_SUT_TIMEOUT
+    assert len(counter) == 3, "用尽后原样上抛"
+
+
+def test_judge_timeout_is_retried_once():
+    """契约 评测-judge.md:41:超时重试 1 次 → 仍超时抛 E_JUDGE_TIMEOUT。"""
+    calls = []
+
+    def chat(_msgs):
+        calls.append(1)
+        raise JudgeError("E_JUDGE_TIMEOUT", "超时")
+
+    j = Judge(JudgeConfig(base_url="http://x", api_key="k", model="m"), chat=chat)
+    with pytest.raises(JudgeError):
+        j.grade({"case_id": 1, "question": "q", "expected": {}, "sut_answer": "a"})
+    assert len(calls) == 2, "超时应重试 1 次(共 2 次尝试)"
+
+
 def test_cli_fault_injection_unreachable_judge_and_sut(tmp_path, monkeypatch):
     """judge 端点与真实被测端点**均不可达** → 进程不崩、逐条记 fail、exit 语义正确。
 
     同时验证 `fastapi-rag` 可作为 sut 装载(契约 评测-evals-schema.md:26 的枚举)。
     """
+    monkeypatch.setattr(runner_mod, "SUT_BACKOFF_S", 0.0)      # 测试不等退避
     monkeypatch.setenv("EVAL_JUDGE_BASE_URL", "http://127.0.0.1:1")
     monkeypatch.setenv("EVAL_JUDGE_API_KEY", "k")
     monkeypatch.setenv("EVAL_JUDGE_MODEL", "m")

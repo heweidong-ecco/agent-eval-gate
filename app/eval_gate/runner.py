@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import time
 from contextlib import nullcontext
@@ -90,6 +91,49 @@ def _run_id(ev: EvSet, quality: str) -> str:
     return f"{time.strftime('%Y%m%d-%H%M%S')}-{digest}"
 
 
+# ── E5 重试与退避(契约 `评测-sut-adapter.md:30-32`)─────────────────────────
+# N 由 R1b 真实数据定:被测中位 916ms / 最大 1573ms、judge 中位 1247ms,
+# 故自 1s 指数退避足以覆盖瞬时抖动,且不会把单条拖过久。
+def _env_num(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+SUT_RETRIES = int(_env_num("EVAL_SUT_RETRIES", 2))          # 重试次数(总尝试 = 1 + N)
+SUT_BACKOFF_S = _env_num("EVAL_SUT_BACKOFF_S", 1.0)         # 指数退避基数
+SUT_RATE_LIMIT_BACKOFF_S = _env_num("EVAL_SUT_429_BACKOFF_S", 3.0)   # 429 限速退避
+
+
+def _sut_call_with_retry(adapter, case: Case, tracer: Tracer | None = None):
+    """调被测,按**契约错误分级**决定是否重试与退避:
+
+    - `E_SUT_TIMEOUT` / `E_SUT_5XX` → **指数退避重试**(≤N);
+    - `E_SUT_4XX` 且 `status == 429` → **限速退避重试**(退避更长);
+    - 其余(`4XX` 非 429 / `AUTH` / `QUOTA` / `BAD_RESPONSE`)→ **不重试,fail-fast**。
+
+    最后仍失败则原样上抛,由调用方按 E5 既有语义处理(记 fail / 配额熔断)。
+    """
+    attempt = 0
+    while True:
+        try:
+            return adapter.run_case(case)
+        except SutAdapterError as e:
+            rate_limited = e.code is SutErrorCode.E_SUT_4XX and e.status == 429
+            retryable = e.code in (SutErrorCode.E_SUT_TIMEOUT, SutErrorCode.E_SUT_5XX) or rate_limited
+            if not retryable or attempt >= SUT_RETRIES:
+                raise
+            delay = SUT_RATE_LIMIT_BACKOFF_S if rate_limited else SUT_BACKOFF_S * (2 ** attempt)
+            if tracer is not None:
+                tracer.log("warn", "sut", "retry",
+                           input={"case_id": case.id, "attempt": attempt + 1, "max_retries": SUT_RETRIES},
+                           output={"error": e.code.name, "http_status": e.status, "delay_s": delay},
+                           status=STATUS_DEGRADED)
+            time.sleep(delay)
+            attempt += 1
+
+
 def _expected_dict(case: Case) -> dict:
     return {
         "answer_contains": case.expected.answer_contains,
@@ -168,7 +212,7 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
                 adapter_kw = {"quality": quality_by_sut[case.sut]}
             with _span(tracer, "sut.call", kind="AGENT", case_id=case.id, sut=case.sut) as ssp:
                 try:
-                    output = get_adapter(case.sut, **adapter_kw).run_case(case)
+                    output = _sut_call_with_retry(get_adapter(case.sut, **adapter_kw), case, tracer)
                 except SutAdapterError as e:
                     _mark(ssp, STATUS_ERROR, e.code.name, e)
                     case_results.append({

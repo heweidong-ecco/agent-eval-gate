@@ -181,7 +181,13 @@ class Judge:
             msgs = self._messages(item)
             if attempt > 0:
                 msgs = msgs + [{"role": "user", "content": "上次不是合法 JSON,请只输出 JSON,不要任何其它文字。"}]
-            text = self._call_chat(msgs)
+            try:
+                text = self._call_chat(msgs)
+            except JudgeError as e:
+                # 契约 评测-judge.md:41「超时:重试 1 次 → 仍超时抛 E_JUDGE_TIMEOUT」
+                if e.code == "E_JUDGE_TIMEOUT" and attempt < self.cfg.retries:
+                    continue
+                raise
             verdict = _parse_verdict(text)
             if verdict is not None:
                 return verdict
