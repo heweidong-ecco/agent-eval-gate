@@ -20,7 +20,9 @@
 - [ ] **R1b 活链路冒烟**(⏸ **等你起被测服务**;本机 Docker daemon 因内存未运行):起 `01.FastAPI RAG Agent`(`docker compose up -d`,需 `DASHSCOPE_API_KEY`/`JWT_SECRET_KEY`/`API_KEY`/`POSTGRES_PASSWORD`)→ 提供**有效被测 API key**(`sk-` 形态,首启日志打印;`admin/admin123` 只是网页登录口令)→ **先 seed**(契约 `评测-sut-adapter.md:42`:用 37 golden 的 `relevant_doc`,30 个唯一值;改被测 DB 属外部动作,动手前问业务方)→ 本仓 `.env` 配 `EVAL_JUDGE_*` + `EVAL_SUT_FASTAPI_BASE_URL` + `EVAL_SUT_FASTAPI_API_KEY` + `EVAL_LIVE=1` → 跑完整评测集 → `eval/runs/` 报告 + 脱敏摘要入库。
 - [ ] **R2b 真实首样本标定**(需真 judge):用 R1 产物标定**北极星/L1/L2/L3 阈值**,回填 `eval/阈值.md`(现全表占位)与 `总纲.md` §4(替换占位)。
 - [x] **R3 观测/trace 左移(E9)** —— **R4 的硬前置**(D-10g)— ✅ 本轮落地:`app/eval_gate/obs.py`(E9)= W3C trace_id/span_id + OpenInference kind + 结构化日志 + 脱敏摘要 + OTLP-JSON 落盘 + `eval-gate trace` **Trace 视图**;已接进 E5(`run.evaluate`→`sut.call`/`rule.check`/`judge.grade`)与 E1/E7。**契约测试守**:trace_id 全链路一致、日志必带 trace_id/span_id、**日志零泄漏被测回答原文**(`tests/test_observability.py`)。实跑 40 例:78 行日志 / 原文出现 **0 处**。B 门禁 `04-阶段3:46,48,49` 三条据此可判。**采样策略留阶段4**(README 落地步骤已标)。
-- [ ] **R4 阶段3 门禁验收**:对照 B `04-阶段3-工程实现-v1.0.md:41-49` 逐条判过/不过(现 3 条 ❌ / 1 条部分 / 1 条适配不适用 / 2 条 ✔),**由业务方判 PASS**(非自评)。
+- [ ] **R4 阶段3 门禁验收**:对照 B `04-阶段3-工程实现-v1.0.md:41-49` 逐条判,**由业务方判 PASS**(非自评)。
+  **预对账(2026-09-10 R0/R3 后,非终裁;终裁=业务方)**:① 前端统一入口 → **适配不适用**(MVP 纯 CLI,D-3);② 后端组件已实现 → **✔**(适配 E1–E9);③ 时序控制(超时/重试/降级/熔断)→ **⚠ 仍部分**(降级✔ 熔断✔ 超时✔;**重试退避/并发上限未做**,参数按 D-10b 留待 R1 数据);④ 全链路 trace_id 贯穿 → **✔**(R3);⑤ 契约测试 + Mock 桩跑通 → **✔**;⑥ 观测已左移(Trace 视图)→ **✔**(R3);⑦ 结构化日志/向量库/缓存/备份 → **⚠ 部分**(结构化日志✔;向量库/缓存/备份对本产品形态多为**不适用**,待 P3-2 存储策略收口)。
+  **剩余两条(#3 重试参数、#7 存储策略)须在 R1b→R2b 后收口。**
 - [ ] 横向:评测门接入真实被测 PR 流程(CI `eval-gate.yml` 放开 EVAL_LIVE/密钥示例;该两行现被注释)。
 - ✅ 定调已签核(D-1..D-9,2026-09-10):C1 架构定位=评测引擎判文本答案、C2 E1–E9、MVP 纯 CLI、契约/评测集内容全认可。见 `docs/decisions/定调复核-签核记录.md`(替代原 `决策确认清单` 的待确认态)。
 - 首发接入对象已登记:自用 `01.FastAPI RAG Agent`(真实被测,U2)。来源 `需求基线.md` §11。
