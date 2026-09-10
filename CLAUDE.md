@@ -17,7 +17,10 @@
 
 ## 纪律(精简;全量见 B 横切原则 + Kit README)
 - 动手前查 skills 是否命中:**agent-system-creator**(造 Agent 主流程,触发优先)主持;superpowers=编码/测试引擎;gate-review / 留痕-checks 卡门;**kit-feedback**(Kit 缺陷反馈)(路由见 Kit `skills-router.md`)。
-- **Kit 缺陷反馈(本仓=母体试金石)**:5 触发点(init / 定调压测门 / gate-review / 留痕-checks / 节点完成)末尾自查「本轮暴露母体 Kit 缺陷吗?是→**提请回写母体** product-agent-dev-os `docs/kit-缺陷登记.md`(证据+最小修复建议)」。**本仓/派生项目不留登记表**(记录统一存母体 .git+GitHub);修母体先经业务方审批后回流。
+- **节点收尾双自查(5 触发点:init / 定调压测门 / gate-review / 留痕-checks / 节点完成)** —— **两项都问,缺一不可**:
+  1. **失败即补 case(B `05-模块-评估与测试:84`)**:**本轮有失败吗**(被测失败 / 评测门自身缺陷 / 环境坑 / 我方流程错误)?**有 → 当轮不算完成**,直到落盘:被测的失败 → `eval/cases/`(带 `regression.root_cause`,格式见其 README);**我方过程错误 → `docs/复盘/`**(模板见该目录)。
+     > ⚠️ 2026-09-10 教训:这条纪律**原先只写在 `eval/README.md`,不在本锚点里**,于是整个阶段3 **一次未执行**(17 条错误散落 5 处)。**纪律不在每会话必读的文件里 = 等于没有。**
+  2. **母体 Kit 缺陷(本仓=试金石)**:本轮暴露母体 Kit 缺陷吗?是→**提请回写母体** `product-agent-dev-os/docs/kit-缺陷登记.md`(证据+最小修复建议)。**本仓不留登记表**;修母体先经业务方审批后回流。
 - 技术/合规/业务表述只准引用事实源(`需求基线.md` + B);AI 不凭空写。
 - **横切原则当红线**(B `03-横切设计原则/`):安全合规(数据分级/注入/人在环中/审计)、成本与 ROI(分层/熔断)、多 Agent 协作与人机协同、信任进化与隔离(提示即代码/可解释/灾备/租户隔离)。每节点 spec 须对照自检。
 - **评估门**:改 Prompt/工具/记忆/评估集 → 必跑 eval 回归,低于阈值阻断发布(`eval/阈值.md`);指标挂 L1/L2/L3 + 北极星。
@@ -27,9 +30,9 @@
 ## 目录(Agent 程序壳)
 ```
 需求基线.md · 总纲.md · ROADMAP.md · CLAUDE.md       # 排版层(事实源/架构/执行图/接续锚)
-docs/RUNBOOK.md · docs/decisions/                    # 流程(指 B)+ 决策
+docs/RUNBOOK.md · docs/decisions/ · docs/复盘/        # 流程(指 B)+ 决策 + **过程错误复盘**(我方错误)
 contracts/ · templates/                              # 契约(工具/MCP/消息协议)与 spec 模板
-eval/ · observability/ · 飞轮/                       # 评估门/观测/数据飞轮(Agent 特有)
+eval/ · eval/cases/ · observability/ · 飞轮/          # 评估门 / **失败回灌用例库** / 观测 / 数据飞轮
 app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 ```
 

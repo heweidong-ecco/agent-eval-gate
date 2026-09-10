@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "threshold_ref": "eval/阈值.md",
+  "sut_default": "fastapi-rag",
+  "_comment": "R1b 真实链路冒烟的 6 条失败回灌(2026-09-10)。格式见同目录 README.md;每条必须带 regression.root_cause。本文件保留在 eval/ 供 CI 校验('失败集完整性检查'),不是评测输入 —— 评测输入见 ../fastapi_rag_golden.evals.json。",
+  "evals": [
+    {
+      "id": 12, "module": "rag", "tags": ["regression"],
+      "input": { "question": "Docker 和 Redis 可以如何配合使用？" },
+      "expected": { "answer_contains": ["容器化", "Docker 部署 Redis", "容器化部署"] },
+      "source": "01.FastAPI RAG Agent archive eval_dataset.json id:11",
+      "regression": {
+        "from_run": "20260910-221513-dde2e4d6",
+        "observed": "根据现有资料，无法回答。现有资料只分别介绍了 Docker…和 Redis…，但上下文中没有说明二者可以如何配合使用。",
+        "root_cause": "golden 期望超出语料本身：seed 语料只分别介绍 Docker 与 Redis，从未写「二者如何配合」。被测拒答实为合理行为。",
+        "status": "open",
+        "prevention": "待业务方在 R2b 复核该条：补语料，或把该条从评测集移除(预期与语料不匹配属评测集缺陷)"
+      }
+    },
+    {
+      "id": 14, "module": "rag", "tags": ["regression"],
+      "input": { "question": "FastAPI 和 LangChain 能一起使用吗？" },
+      "expected": { "answer_contains": ["提供 API", "提供API", "API 接口", "API接口"] },
+      "source": "01.FastAPI RAG Agent archive eval_dataset.json id:13",
+      "regression": {
+        "from_run": "20260910-221513-dde2e4d6",
+        "observed": "根据现有资料，无法回答。现有资料分别介绍了 FastAPI 和 LangChain 各自是什么，但没有提到两者能否一起使用。",
+        "root_cause": "同 id12：golden 期望(FastAPI 为 LangChain 应用提供 API)在语料中无对应表述，属期望超出语料。",
+        "status": "open",
+        "prevention": "待业务方在 R2b 复核该条留删；同类「组合式提问」应在转档时先核对语料是否支持"
+      }
+    },
+    {
+      "id": 15, "module": "rag", "tags": ["regression"],
+      "input": { "question": "向量数据库在 RAG 中的作用是什么？" },
+      "expected": { "answer_contains": ["相似性搜索", "相似性检索", "相似度检索", "近似最近邻", "向量检索"] },
+      "source": "01.FastAPI RAG Agent archive eval_dataset.json id:14",
+      "regression": {
+        "from_run": "20260910-221513-dde2e4d6",
+        "observed": "根据现有资料，无法回答。现有上下文仅提到向量数据库常用于相似性搜索和推荐系统[来源:2]，但没有说明它在 RAG 中的作用。",
+        "root_cause": "语料已在库(seed 已灌 62 篇)但未被召回 —— R1b 口径 mode=accurate_norerank 关闭重排，检索召回率下降。",
+        "status": "open",
+        "prevention": "阶段4 评估：对比 accurate(开重排)与 accurate_norerank 的召回差异；若确认是召回问题，考虑调 top_k 或评估重排带来的收益/成本"
+      }
+    },
+    {
+      "id": 18, "module": "rag", "tags": ["regression"],
+      "input": { "question": "RAG 系统需要哪些核心技术？" },
+      "expected": { "answer_contains": ["LangChain", "向量数据库", "FastAPI"] },
+      "source": "01.FastAPI RAG Agent archive eval_dataset.json id:17",
+      "regression": {
+        "from_run": "20260910-221513-dde2e4d6",
+        "observed": "根据现有资料，无法回答。",
+        "root_cause": "同 id15：语料在库(含 LangChain/向量数据库/FastAPI 三者)但未召回。",
+        "status": "open",
+        "prevention": "同 id15，阶段4 一并核查"
+      }
+    },
+    {
+      "id": 20, "module": "rag", "tags": ["regression"],
+      "input": { "question": "混合检索比纯向量检索好在哪里？" },
+      "expected": { "answer_contains": ["互补", "取长补短"] },
+      "source": "01.FastAPI RAG Agent archive eval_dataset.json id:19",
+      "regression": {
+        "from_run": "20260910-221513-dde2e4d6",
+        "observed": "根据现有资料，无法回答。现有上下文仅介绍了向量数据库…常用于相似性搜索和推荐系统，但没有提供关于混合检索及其与纯向量检索对比的信息。",
+        "root_cause": "同 id15：语料「向量检索理解语义，BM25 精确匹配关键词，两者结果互补」已在库却未召回。",
+        "status": "open",
+        "prevention": "同 id15"
+      }
+    },
+    {
+      "id": 26, "module": "rag", "tags": ["regression"],
+      "input": { "question": "文档中提到了几种数据库？" },
+      "expected": { "answer_contains": ["三种", "三类", "3 种", "3种"] },
+      "source": "01.FastAPI RAG Agent archive eval_dataset.json id:25",
+      "regression": {
+        "from_run": "20260910-221513-dde2e4d6",
+        "observed": "根据现有资料，文档中提到了两种数据库：向量数据库 [来源:2] 和 Redis [来源:3]。",
+        "root_cause": "检索未召回 PostgreSQL 那篇 → 被测按召回到的 2 篇如实作答，计数错误实为召回不全的下游表现。",
+        "status": "open",
+        "prevention": "同 id15;另注:本条为「计数类」提问，对召回完整性极敏感，宜作为召回质量的探针用例"
+      }
+    }
+  ]
+}

@@ -6,6 +6,10 @@
           {
             "type": "command",
             "command": "KIT_SENTINEL=1 .claude/hooks/kit-sentinel.sh"
+          },
+          {
+            "type": "command",
+            "command": "FAILURE_SENTINEL=1 .claude/hooks/failure-sentinel.sh"
           }
         ]
       }

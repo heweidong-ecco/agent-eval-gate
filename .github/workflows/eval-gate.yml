@@ -1,5 +1,6 @@
 # eval-gate CI 示例:评测门独立成 job(不并入纯代码门绿灯)。
 # 纪律:改 Prompt/工具/记忆/评测集 → 必跑评测回归;低于阈值阻断(eval/阈值.md)。
+# 另含「失败即补 case」硬门(依据 B 05-模块-评估与测试:84 + eval/cases/README.md)。
 name: eval-gate
 
 on:
@@ -11,17 +12,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # 需要历史,供下面的「改动留痕」检查做 diff
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: 安装(dev 含 pytest)
         run: pip install -e '.[dev]'
+
       - name: 单元 + 契约测试(离线、零外网)
+        # 含 tests/test_failure_cases.py —— eval/cases/ 每条必须带 regression.root_cause
         run: pytest -q
+
       - name: 自证:忠实被测应过门(exit 0)
         run: python -m eval_gate run --evals eval/mini_rag_qa.evals.json --mode good --offline
-      - name: 劣化回归:应被门拦(exit 1,故意演示门真的会拦)
-        run: python -m eval_gate run --evals eval/mini_rag_qa.evals.json --mode bad --offline
+
+      - name: 劣化回归:应被门拦(显式断言 exit 1)
+        # 注意:此步**期望非零退出**(门拦下劣化),故必须自己断言,不能靠"非零即失败"。
+        run: |
+          set +e
+          python -m eval_gate run --evals eval/mini_rag_qa.evals.json --mode bad --offline
+          code=$?
+          if [ "$code" -ne 1 ]; then
+            echo "::error::期望 exit 1(劣化被门拦下),实际 $code"
+            exit 1
+          fi
+          echo "✅ 劣化被拦(exit 1)"
+
+      - name: 改动评测集/阈值须同步留痕(失败即补 case 硬门)
+        if: github.event_name == 'pull_request' || github.event.before != '0000000000000000000000000000000000000000'
+        run: |
+          set -e
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || true)
+          echo "$CHANGED" | sed 's/^/  changed: /'
+          if echo "$CHANGED" | grep -qE '^eval/(fastapi_rag_golden\.evals\.json|mini_rag_qa\.evals\.json|阈值\.(md|json))'; then
+            if ! echo "$CHANGED" | grep -qE '^(eval/cases/|docs/复盘/)'; then
+              echo "::error::改动了评测集/阈值,但未在 eval/cases/ 或 docs/复盘/ 留痕。"
+              echo "::error::依据「失败即补 case」:被测的失败 → eval/cases/(带 regression.root_cause);我方过程错误 → docs/复盘/。"
+              exit 1
+            fi
+            echo "✅ 评测集/阈值改动已同步留痕"
+          else
+            echo "✅ 本次未改动评测集/阈值,跳过"
+          fi
+
       # 真实被测/真 judge 冒烟:配置密钥后放开(EVAL_LIVE=1)
       # - name: 真实冒烟(需密钥)
       #   run: EVAL_LIVE=1 pytest -q tests/test_live_smoke.py
