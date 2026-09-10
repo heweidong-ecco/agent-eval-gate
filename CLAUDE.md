@@ -75,8 +75,14 @@ eval/ · eval/cases/ · observability/ · 飞轮/          # 评估门 / **失�
 app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 ```
 
-## 当前指针(随推进更新 — 上次更新 2026-09-10)
-- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:`main | 阶段3 ✅ 收口(业务方判 PASS,D-11)→ 阶段4-步骤8 | E1–E9 已实现 | L2 任务完成率 ≥0.80(基线 0.85–0.925) | 劣化被拦次数 = 1`
+## 当前指针(随推进更新 — 上次更新 2026-09-11)
+- `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:`main | 阶段3 ✅ 收口(业务方判 PASS,D-11)→ 阶段4-步骤8(未开工)| E1–E9 已实现 | L2 任务完成率 ≥0.80(基线 0.85–0.925) | 劣化被拦次数 = 1`
+- **⚠️ 开工先读(2026-09-11 交接)**:阶段4 开工前有 **2 个未修缺陷**,属**门禁自腐**(详见 `docs/复盘/2026-09-11-门禁自腐与盲测2.md` + ROADMAP「阶段4 开工前待办」):
+  - **F1(严重)**:`tests/test_hooks.py:216` 用假 session_id 跑真 `skill-trace.sh` → 覆写 `.claude/traces/latest.json` 为 `skill_calls:0` → **跑一次 `pytest` 就毁掉门 2 判定依据**,之后实现类提交全被误拦。**已复现,未修。**
+  - **F2**:`tests/test_hooks.py:86` 干净树绿、**正常 TDD 中必红**。**未修。**
+  - 另:`main` 领先 `origin/main` **2 个 commit 未推**(`1d5c996` / `f3aaec8`)。
+  > **交接背景**:上一会话 `c549c42a` 在 **1,017,378 tokens** 时 `API Error 400` 中断 —— **该会话不可 `--resume`**(会原样撞同一上限)。本轮已把断点状态从 transcript 抢救落盘。
+- **门禁硬化已落地(2026-09-11 凌晨,8 个 commit)**:skills 三层结构(锚点对应表 → hook 哨兵 → CI 检查)+ **门禁左移**(`impl-guard.sh`,PreToolUse ask)+ **门 1/门 2**(commit-msg:认实现先于测试 + 未调用 `test-driven-development` 即拒提交)。**盲测实证 2/2 复现**:两个空上下文子 Agent 均被门 1/门 2 拦下,并**主动调用 `test-driven-development` 回退重做**。策略沉淀在 `~/Desktop/知识库/18.Agent避坑库-问题解决策略/` 01·02(§4.9)·03。
 - 进度:阶段1/2 **业务方逐条签核 D-1..D-9(2026-09-10)**;阶段3 P3-1 首跑 `app/eval_gate/` E1–E7 竖切 + fastapi-rag 适配器 + CI 示例,`pytest` 47 passed(离线零外网),good→exit0 / bad→exit1 被拦。真实被测:`01.FastAPI RAG Agent`(切 DeepSeek,commit `36aa291`)。
 - **P3 收口顺序已签核(D-10a..D-10h,2026-09-10)** —— grilling 定调压测门通过后修订 D-9:顺序 = **R0 → R2a → R1 → R2b → R3 → R4**;R3 升级为 **R4 硬前置**;契约补丁三处。过程数据 `notes/grilling/P3-1优先级-2026-09-10.md`,签核 `docs/decisions/定调复核-签核记录.md`。
 - **阶段门纪律**:gate-review 出建议、终裁 = 业务方签核(本指针/节点 ✔ 均以此为准,不再自评 PASS)。
