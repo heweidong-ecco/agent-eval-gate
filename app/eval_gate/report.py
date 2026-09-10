@@ -9,6 +9,17 @@ import json
 from pathlib import Path
 
 
+def format_duration(seconds) -> str:
+    """秒数 → 给人读的时长串:不足 1 分钟 `45s`,否则 `1m30s`(秒位显式保留)。
+
+    报告/日志展示用;末尾的 `s` 单位不可省(便于与 `ms` 区分)。
+    """
+    total = int(seconds)
+    if total < 60:
+        return f"{total}s"
+    return f"{total // 60}m{total % 60}s"
+
+
 def write_run(result, outdir: str | Path, ev_path: str | Path, judge_label: str) -> Path:
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
