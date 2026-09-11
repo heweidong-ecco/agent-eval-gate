@@ -23,9 +23,12 @@ payload=$(cat 2>/dev/null || true)
 fpath=$(printf '%s' "$payload" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$fpath" ] || exit 0
 
-# 只在"实现目录"上管(按项目实际改)
+# 只在"实现目录"上管(按项目实际改)。
+# 【2026-09-11 扩范围】加上**门禁/工具脚本自身** —— 与 `.githooks/commit-msg` 的 SRC 判据保持一致,
+#   否则改门禁脚本无人看守(而那正是"改错了不会有人发现"的地方)。
 case "$fpath" in
   */app/*|*/backend/*|*/src/*) : ;;
+  */.claude/hooks/*|*/.githooks/*|*/tools/*) : ;;
   *) exit 0 ;;
 esac
 # 测试文件本身放行(那正是我们要鼓励的)

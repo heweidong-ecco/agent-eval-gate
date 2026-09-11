@@ -18,8 +18,17 @@
   ③ 提交信息**没有**合法豁免 —— 合法 = `[no-test: <理由>]`(**必须带理由**;裸 `[no-test]` 不算)
 → 判为**绕过**。
 
-诚实的边界:若本机伪造历史(base 取错/浅克隆导致算不出来),本工具**无法判定**,
-此时打警告并 **exit 0**(fail-open,与门 2 的既有约定一致)—— 不假装通过,也不误炸 CI。
+诚实的边界
+----------
+1. 若本机伪造历史(base 取错/浅克隆导致算不出来),本工具**无法判定**,此时打警告并
+   **exit 0**(fail-open,与门 2 的既有约定一致)—— 不假装通过,也不误炸 CI。
+2. **规则是向前生效的,不是追溯的。** 2026-09-11 把覆盖范围从 `app|backend|src`
+   扩到「+ 门禁/工具脚本」后,该日期**之前**的历史提交会被本工具**追溯标记**
+   (当时它们改 hook 脚本确实没配测试,但那时不违规)。
+   → CI 用 `pull_request.base.sha` / `event.before` 作 base,**天然把范围限定为新提交**,
+     正常推送不会碰到这些遗留提交;
+   → 但若 base 取到很远的过去(如长 PR、rebase),就会看到一批"历史遗留"告警。
+     **这不是回归,是规则生效时点问题** —— 按需在 base 上取近点即可。
 
 用法
 ----
@@ -35,7 +44,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-IMPL_RE = re.compile(r"^(app|backend|src)/.*\.(py|ts|js)$")
+# 实现文件 = 应用代码 **+ 门禁/工具脚本自身**(与 .githooks/commit-msg 的 SRC、impl-guard 的路径判据三处一致)
+# 注:`.githooks/` 下的 git hook **按惯例没有扩展名**(`commit-msg` / `post-commit`),故整个目录都算。
+IMPL_RE = re.compile(r"^(app|backend|src)/.*\.(py|ts|js)$"
+                     r"|^(\.claude/hooks|tools)/.*\.(sh|py)$"
+                     r"|^\.githooks/")
 TEST_RE = re.compile(r"(^|/)tests?/.*\.(py|ts|js)$")
 # 合法豁免:[no-test: <非空理由>]  —— 裸 [no-test] 不算(理由必须可见,豁免才可审计)
 EXEMPT_RE = re.compile(r"\[no-test:\s*[^\]]")

@@ -168,6 +168,30 @@ def test_impl_guard_judges_by_edited_files_repo_not_its_own(tmp_path):
         shutil.rmtree(other, ignore_errors=True)
 
 
+@pytest.mark.parametrize("path", [
+    ".claude/hooks/some-hook.sh",
+    ".githooks/post-commit",
+    "tools/some_tool.py",
+])
+def test_impl_guard_covers_gate_scripts(path):
+    """门禁/工具脚本的编辑也走左移门(与门 1 覆盖范围保持一致)。"""
+    d = _tmp_repo()
+    try:
+        _write(d, path, "#!/bin/sh\nexit 0\n")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "init"], cwd=d,
+                       check=True, capture_output=True)
+        payload = json.dumps({"tool_name": "Edit",
+                              "tool_input": {"file_path": str(d / path)}})
+        r = _run(d / ".claude" / "hooks" / "impl-guard.sh", payload,
+                 {"IMPL_GUARD": "1"}, cwd=d)
+        assert r.returncode == 0
+        assert json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"] == "ask", \
+            f"{path} 不在左移门覆盖范围"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_impl_guard_silent_for_file_outside_any_repo(tmp_path):
     """被编辑的文件不在任何 git 仓库里 → 不干预(无从判断,也不该打扰)。"""
     plain = tmp_path / "plain" / "app"
@@ -187,10 +211,15 @@ def test_impl_guard_silent_when_disabled():
 
 # ── ② 该拦的拦:commit-msg(git hook,两道门)────────────────────────────────
 
-def _tmp_repo() -> Path:
-    """造一个临时 git 仓库(**仓外**,用 mkdtemp):复制 hook + 建 app/ 与 tests/。
+def _tmp_repo(commit_scaffold: bool = True) -> Path:
+    """造一个临时 git 仓库(**仓外**,用 mkdtemp):复制 hook + 建 app/ tests/ tools/。
 
     hook 从**自身路径**推导仓库根(`dirname $0/../..`),故复制进临时仓库即天然隔离。
+
+    `commit_scaffold=True`(默认)会把脚手架**提交一次** —— 这既是真实状态(门禁脚本本就已入库),
+    也避免 `git add -A` 把脚手架一起暂存:自 2026-09-11 门检扩范围后,
+    `.claude/hooks/`、`.githooks/`、`tools/` **也算实现文件**,不收尾会让每个用例都多出无关的 SRC。
+    确实需要"空仓库(无 HEAD)"的用例传 `commit_scaffold=False`。
     """
     import tempfile
     d = Path(tempfile.mkdtemp(prefix="evalgate-hooktest-"))
@@ -199,6 +228,7 @@ def _tmp_repo() -> Path:
     (d / ".claude" / "traces").mkdir(parents=True)
     (d / "app").mkdir()
     (d / "tests").mkdir()
+    (d / "tools").mkdir()
     (d / "docs").mkdir()
     shutil.copy2(GITHOOKS / "commit-msg", d / ".githooks" / "commit-msg")
     shutil.copy2(GITHOOKS / "post-commit", d / ".githooks" / "post-commit")
@@ -206,6 +236,10 @@ def _tmp_repo() -> Path:
     subprocess.run(["git", "init", "-q"], cwd=d, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "t@t"], cwd=d, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=d, check=True, capture_output=True)
+    if commit_scaffold:
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "--no-verify", "-qm", "scaffold"],
+                       cwd=d, check=True, capture_output=True)
     return d
 
 
@@ -314,6 +348,29 @@ def test_commit_msg_gate2_rejects_bare_no_skill_marker():
                             str(_msg(d, "feat: x [no-skill]\n"))],
                            cwd=d, capture_output=True, text=True)
         assert r.returncode == 1, "裸 [no-skill] 仍被放行"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+@pytest.mark.parametrize("path", [
+    ".claude/hooks/impl-guard.sh",
+    ".githooks/post-commit",
+    "tools/check_gate_bypass.py",
+])
+def test_commit_msg_gate1_covers_gate_scripts(path):
+    """**门禁脚本自身也被门 1 覆盖**。
+
+    此前两道门只认 `^(app|backend|src)/`,于是**改门禁脚本没有任何门看着**
+    —— 而门禁正是"改错了不会有人发现"的地方(本仓 CLAUDE.md 曾自认这个口子)。
+    """
+    d = _tmp_repo()
+    try:
+        _write(d, path, "#!/bin/sh\nexit 0\n")
+        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+        r = subprocess.run(["sh", str(d / ".githooks" / "commit-msg"),
+                            str(_msg(d, "chore: 改门禁\n"))],
+                           cwd=d, capture_output=True, text=True)
+        assert r.returncode == 1, f"{path} 不在门 1 覆盖范围 —— 改门禁无人看守"
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -559,7 +616,7 @@ def test_post_commit_respects_exemption_with_reason():
 
 def test_post_commit_always_exits_zero_even_without_commits():
     """空仓库(无 HEAD)→ 仍 exit 0,不阻断、不报错。"""
-    d = _tmp_repo()
+    d = _tmp_repo(commit_scaffold=False)
     try:
         r = subprocess.run(["sh", str(d / ".githooks" / "post-commit")], cwd=d,
                            capture_output=True, text=True)
@@ -637,6 +694,22 @@ def test_gate_bypass_check_rejects_bare_marker_in_history():
         _commit(d, "refactor: x [no-test]")
         r = _run_bypass_check(d, base)
         assert r.returncode == 1, "裸标记在历史里被当成合法豁免"
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_gate_bypass_check_covers_gate_scripts():
+    """绕过重算的覆盖范围也要含门禁/工具脚本(三处判据必须一致)。"""
+    d = _tmp_repo()
+    try:
+        _write(d, "app/a.py")
+        _write(d, "tests/test_a.py")
+        _commit(d, "feat: 初始")
+        base = _head(d)
+        _write(d, ".claude/hooks/x.sh", "#!/bin/sh\nexit 0\n")
+        _commit(d, "chore: 改门禁脚本却无测试")
+        r = _run_bypass_check(d, base)
+        assert r.returncode == 1, "改门禁脚本没被历史重算抓到"
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

@@ -21,7 +21,11 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 msg=$(cat "$msgfile" 2>/dev/null || true)
 
 CHANGED=$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)
-SRC=$(printf '%s\n' "$CHANGED" | grep -cE '^(app|backend|src)/.*\.(py|ts|js)$' || true)
+# 【2026-09-11 扩范围】实现文件不再只算 app|backend|src —— **门禁/工具脚本自身也纳入**。
+#   此前改 `.claude/hooks/`、`.githooks/`、`tools/` 时**没有任何门看着**,
+#   而门禁正是"改错了不会有人发现"的地方。三处判据(本文件 / impl-guard / check_gate_bypass.py)必须一致。
+# 注:`.githooks/` 下的 git hook **按惯例没有扩展名**(`commit-msg` / `post-commit`),故整个目录都算。
+SRC=$(printf '%s\n' "$CHANGED" | grep -cE '^(app|backend|src)/.*\.(py|ts|js)$|^(\.claude/hooks|tools)/.*\.(sh|py)$|^\.githooks/' || true)
 TST=$(printf '%s\n' "$CHANGED" | grep -cE '(^|/)tests?/.*\.(py|ts|js)$' || true)
 
 [ "$SRC" -gt 0 ] || exit 0     # 本次不动实现目录 → 两道门都不适用
