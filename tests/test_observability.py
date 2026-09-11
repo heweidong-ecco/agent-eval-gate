@@ -12,8 +12,9 @@ from pathlib import Path
 
 from eval_gate.cli import main
 from eval_gate.judge import FakeJudge
-from eval_gate.obs import (KIND_ATTR, Tracer, digest, new_trace_id, read_trace,
-                           render_tree, short_trace_id, span_name)
+from eval_gate.obs import (KIND_ATTR, Tracer, digest, new_span_id, new_trace_id,
+                           read_trace, render_tree, short_span_id, short_trace_id,
+                           span_name)
 from eval_gate.runner import default_thresholds, evaluate
 from eval_gate.schema import Case, Checks, EvSet, Expected
 
@@ -118,6 +119,27 @@ def test_short_trace_id_returns_empty_for_unusable_input():
     assert short_trace_id(None) == ""
     assert short_trace_id(12345678) == ""
     assert short_trace_id(["0123456789"]) == ""
+
+
+# --- short_span_id:与 short_trace_id 同口径的短标识 ---------------------------
+
+def test_short_span_id_takes_first_8_of_real_id():
+    sid = new_span_id()
+    assert len(sid) == 16
+    assert short_span_id(sid) == sid[:8]
+
+
+def test_short_span_id_boundary_exactly_8():
+    assert short_span_id("12345678") == "12345678"
+
+
+def test_short_span_id_returns_empty_for_unusable_input():
+    """短于 8 位 / 非字符串一律空串,不抛异常(与 short_trace_id 同口径)。"""
+    assert short_span_id("abc") == ""
+    assert short_span_id("") == ""
+    assert short_span_id(None) == ""
+    assert short_span_id(12345678) == ""
+    assert short_span_id(["0123456789"]) == ""
 
 
 # --- span_name:kind + 具体对象拼出可读 span 名 -------------------------------
