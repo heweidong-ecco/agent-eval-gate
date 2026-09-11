@@ -84,7 +84,7 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
   - **问题 B(子 Agent 拿不到纪律 / 新登记 KD-10)**:`.claude/hooks/subagent-guard.sh`(SubagentStart)**把纪律注入子 Agent 上下文** —— 实机验证到达(`hook_additional_context`),且子 Agent **照注入第 6 条报告了格式**(行为被改变)。到达可证伪:`tools/check_subagent_injection.py`。
   - **F1/F2/F5 全修**:F1(测试污染门 2 证据链)、F2(门禁测试与工作区耦合)、**F5(`impl-guard` 判据锚错仓库 → 在另一检出改实现会误弹 ask → 挂死子 Agent)**。
   - **⚠️ 仍未解决**:① **F3** 长任务无断点保护;② **门禁「拦截力」至今只有盲测 2 的 2/2 证据** —— 盲测 4 想复测,结论是「**藏不住**」(Agent 动手前就 `git config core.hooksPath` 并 `cat` 了仓外门禁源码),**要复测须让"侦察"本身失效,而非藏文件**。
-  - **母体登记已回写**(`product-agent-dev-os` `e7700dd`):KD-9 补证据③ + **新建 KD-10** + 回流差异清单 14 项;**母体代码零改动,等业务方审批后回流**。
+  - **母体已回写并回流**(业务方批准):`e7700dd` 登记(KD-9 补证据③ + **新建 KD-10** + 回流清单 14 项)→ **`bbbfcdf` 已回流代码 15 项**(scaffold 首次获得 `tests/` 门禁防腐测试 + 母体自身 CI)。验证 = 在**模拟派生项目**里跑 scaffold 测试(**82 passed**);该步骤已固化进母体 CI 作为**回流漂移探测网**。另:`kb-drift-sentinel.sh` 注释系**反向回流**(母体→本仓)—— **回流不是单向的**。
   > **交接背景**:上一会话 `c549c42a` 在 **1,017,378 tokens** 时 `API Error 400` 中断 —— **该会话不可 `--resume`**(会原样撞同一上限)。断点状态已从 transcript 抢救落盘(ROADMAP + 本指针 + `docs/复盘/`)。
   > **另**:`.claude/hooks/` 下的门禁脚本**不在门 1/门 2 的覆盖范围**(两道门只认 `app|backend|src`)—— 改门禁脚本不会被任何门检查,需人工留意(**待业务方定夺是否扩范围**)。
 - **门禁硬化已落地(2026-09-11 凌晨,8 个 commit)**:skills 三层结构(锚点对应表 → hook 哨兵 → CI 检查)+ **门禁左移**(`impl-guard.sh`,PreToolUse ask)+ **门 1/门 2**(commit-msg:认实现先于测试 + 未调用 `test-driven-development` 即拒提交)。**盲测实证 2/2 复现**:两个空上下文子 Agent 均被门 1/门 2 拦下,并**主动调用 `test-driven-development` 回退重做**。策略沉淀在 `~/Desktop/知识库/18.Agent避坑库-问题解决策略/` 01·02(§4.9)·03。
