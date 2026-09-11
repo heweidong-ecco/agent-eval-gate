@@ -18,21 +18,31 @@
 
 **第一步(建议按序)**:
 
-1. **出「阶段4-步骤8」的 spec** —— 用 `templates/_spec.md` 模板,起点读 B `04-分阶段工作流/04-阶段4-测试验证-v1.0.md`(门禁/产出物/应注入原则)。走 skill `writing-plans`。
-2. **执行 spec** —— 走 skill `executing-plans`;写码前 `test-driven-development`。
-3. 每节点收尾过**双自查**(失败即补 case + 母体 Kit 缺陷),见 `CLAUDE.md` 纪律段。
+1. ~~**出「阶段4-步骤8」的 spec**~~ —— ✅ **已完成**(`8e1ac56`,2026-09-11 00:07):
+   `docs/specs/P4-1-测试与压测.md` + **签核 D-12**(形态适配:甲=测评测门自身、乙=真实被测基准)。
+2. ✅ **出实施计划**(`490b4e0`)—— `docs/plans/2026-09-11-P4-1-测试与压测-实施计划.md`
+   (**10 个任务**,TDD、每个任务一次 commit、含自审修正)。
+3. **执行计划** —— 走 skill `executing-plans`(或 `subagent-driven-development`);写码前 `test-driven-development`。
+   ⚠️ **已知风险**:「同 worktree 并行委派互相 reset」已登记为未处理项 → **不要并行派多个子 Agent**改同一工作区;
+   要么串行派、要么本会话内联执行。
+4. 每节点收尾过**双自查**(失败即补 case + 母体 Kit 缺陷),见 `CLAUDE.md` 纪律段。
 
-**阶段4 具体要交的东西**(来自 B 阶段4 门禁 + 本仓遗留):
+**阶段4 具体要交的东西**(来自 B 阶段4 门禁 + 本仓遗留;实施计划已把四项拆进 T1–T10):
 
-| # | 待办 | 依据/起点 |
-|---|---|---|
-| 1 | **阈值 A/B**:`eval/README.md:24` 要求的 **N 次 A/B + p-value** | 现阈值只能判**大**退化(基线单轮波动 7.5pp);不做则判不了微小退化 |
-| 2 | **压测出 L1 基线**:QPS / P99 / 错误率 | `总纲.md` §4 的 L1 条目现为占位 |
-| 3 | **覆盖率达标** + 端到端 + 回放测试 | B 阶段4 门禁 |
-| 4 | **红队报告** | 已有 R2a 的对抗样本基础(`eval/fastapi_rag_golden.evals.json`) |
+| # | 待办 | 依据/起点 | 计划落点 |
+|---|---|---|---|
+| 1 | **阈值 A/B**:`eval/README.md:24` 要求的 **N 次 A/B + p-value** | 现阈值只能判**大**退化(基线单轮波动 7.5pp);不做则判不了微小退化 | T4(统计层)+ T5(N 轮实验) |
+| 2 | **压测出 L1 基线**:QPS / P99 / 错误率 | `总纲.md` §4 的 L1 条目现为占位 | T7(+ T9 真实一轮) |
+| 3 | **覆盖率达标** + 端到端 + 回放测试 | B 阶段4 门禁 | T1/T2/T3(覆盖率、异常路径)+ T8(端到端甲);回放属 P4-2 |
+| 4 | **红队报告** | 已有 R2a 的对抗样本基础(`eval/fastapi_rag_golden.evals.json`) | T2/T3/T6(四类靶子)+ T10(报告) |
+
 
 **环境备查**(阶段4 要用真实被测时):
-- 被测仓库 `01.FastAPI RAG Agent`(`36aa291`,未改一行);运行需 `/tmp/sut-lite-venv` + `/tmp/sut_run.py` 脚手架
+- ⚠️ **2026-09-11 实测:环境已失** —— Docker daemon **未运行**;`/tmp/sut-lite-venv`、`/tmp/sut_run.py`、
+  `/tmp/sut-shim` **均已被重启清空**。真实链路(T9/乙)需**先重建**(计划 Task 9 Step 2 已列步骤);
+  重建不成 → 按 spec §8 标注「未跑 + 原因」,**不得伪造数据**。
+- 被测仓库**不在** `~/Desktop/Product/` 下,实际在
+  `/Users/heweidong/Desktop/ai-learning/重点教学内容/01.FastAPI RAG Agent`(`36aa291`,未改一行)
 - `docker start rag-api` 可恢复容器;被测连 `127.0.0.1`(不是 `localhost`);需 `SSL_CERT_FILE=/etc/ssl/cert.pem`
 - judge 模型:`deepseek-v4-flash`(⚠️ 该网关不校验模型名,以官方文档为准)
 - **门禁自腐 F1/F2 已修(2026-09-11,`7110809`)** —— 见 `docs/复盘/2026-09-11-门禁自腐与盲测2.md`:
