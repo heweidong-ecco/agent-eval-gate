@@ -9,7 +9,7 @@
 #      ① 能覆盖「在别的电脑上改过、本机同步过来」;② 不会每轮刷屏。
 # 状态:`.claude/.kb-avoid-manifest`(每台机器各自维护,已 gitignore)。
 #
-# opt-in:设 KB_SENTINEL=1 才生效;可用 KB_AVOID_PITFALLS_DIR 覆盖库路径。
+# opt-in:设 KB_SENTINEL=1 才生效(注册处已内联设置);可用 KB_AVOID_PITFALLS_DIR 覆盖库路径。
 [ "$KB_SENTINEL" = "1" ] || exit 0
 
 KB="${KB_AVOID_PITFALLS_DIR:-$HOME/Desktop/知识库/18.Agent避坑库-问题解决策略}"
