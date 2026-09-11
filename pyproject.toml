@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-eval-gate"
-version = "0.1.0"
+version = "0.3.0"
 description = "Agent 生产就绪评测门:评测集 + 确定性规则 + LLM-as-Judge + 阈值门(自用先行)"
 requires-python = ">=3.10"
 
