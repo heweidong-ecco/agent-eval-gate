@@ -1,7 +1,7 @@
 """E2 迷你 RAG-QA 被测(mini_rag):忠实/劣化两态 + 检索/拒答。"""
 import pytest
 
-from eval_gate.mini_rag import answer, DOCS, HALLUCINATED_ANSWER
+from eval_gate.mini_rag import answer, DOCS, HALLUCINATED_ANSWER, normalize_text
 
 
 def test_faithful_answer_hits_corpus_fact():
@@ -35,3 +35,12 @@ def test_docs_are_nonempty_and_well_formed():
 def test_bad_quality_rejected():
     with pytest.raises(ValueError):
         answer("q", quality="nonsense")
+
+
+def test_normalize_text_lowercases_and_strips_whitespace():
+    assert normalize_text("  Hello World  ") == "hello world"
+
+
+def test_normalize_text_is_idempotent_and_preserves_inner_text():
+    assert normalize_text(" PGVector ") == normalize_text(normalize_text(" PGVector "))
+    assert normalize_text("A B") == "a b"

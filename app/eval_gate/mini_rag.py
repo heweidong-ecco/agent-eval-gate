@@ -50,3 +50,8 @@ def answer(question: str, quality: str = "faithful") -> str:
 
 def looks_like_refusal(text: str) -> bool:
     return _is_refusal(text)
+
+
+def normalize_text(s: str) -> str:
+    """转小写并去掉首尾空白(内部空白原样保留)。"""
+    return s.lower().strip()
