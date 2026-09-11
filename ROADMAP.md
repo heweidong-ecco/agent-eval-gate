@@ -59,6 +59,17 @@ E6 `docker --env-file` 不剥行内注释 / E7 镜像陈旧 + 第三方额度耗
 | **T5** | 判据不变量重审(**低优先,不阻塞**) | `must_refuse` 仍是「规则」而非「语义」,新措辞可能再漏;根治需重审「红队必须走确定性引擎」这条不变量 | 须单独 DEC + 签核 | — |
 | **T6** | 母体回写(**已定,暂无动作**) | KD-5 证据③④ 已登记,业务方裁决「**不援引先例,继续累积证据**」⇒ **待第二个派生项目出现再提** | — | — |
 
+#### 🔀 工作方式变更:**`main` 已开分支保护,不得直推**(2026-09-12,签核 D-14)
+
+> 业务方指示:「实际工作中是必须走分支 pr保护 和 CI认证的,保证 main 主线的整体完整和正确」。
+> 配置:`main` 要求 **PR + 必需检查 `eval` + `enforce_admins: true`**;已开 **auto-merge**(CI 绿后自动合并,**无需人工点**)。
+> **实测**(管理员直推被拒):`GH006 … Changes must be made through a pull request`。
+> **做法**:建分支 → 推 → `gh pr create` → `gh pr merge --auto --squash` → 等 CI。
+> **这是"门禁左移"的最后一块**:此前"直提 main"时 CI 在 push **之后**才跑,**红叉只等于"记了一笔",东西已经上去了**
+> (2026-09-11 CI #17–#33 全红而代码早在 main 上,即为此)。
+> 前置:`gh` 已装(v2.100.0,官方二进制 —— 真因是 **Homebrew 6.x 放弃 macOS 13**,非网络)并完成 `gh auth login`。
+> 回退:`gh api -X DELETE repos/heweidong-ecco/agent-eval-gate/branches/main/protection`。
+
 #### 📌 环境与产物备查(交给下一个会话)
 
 - **被测服务**:`tools/sut-harness/run_sut.sh`(含能力探针;用法与 4 条陷阱见其 README)。**别再直接用原 `rag-api` 容器**(镜像陈旧)。

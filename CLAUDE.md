@@ -65,6 +65,14 @@
 - **评估门**:改 Prompt/工具/记忆/评估集 → 必跑 eval 回归,低于阈值阻断发布(`eval/阈值.md`);指标挂 L1/L2/L3 + 北极星。
 - 钱/合规/对外发布/上线由人确认;发布走 PR→CI(含 eval-gate)→tag。
 - 代码 git + GitHub 留痕:issue→branch→PR(`Closes #<id>`)→CI 绿→review→merge。
+- **⚠️ `main` 已开分支保护(2026-09-12,签核 D-14)—— 不得直推**:
+  `main` 要求 **PR** + **必需检查 `eval`** + **`enforce_admins: true`**(**管理员亦不可直推**,实测被拒:
+  `GH006 Protected branch update failed … Changes must be made through a pull request`);
+  同时**已开 auto-merge** ⇒ **CI 绿后自动合并,无需人工点**(业务方无需实时跟随)。
+  → **工作方式**:建分支 → 推 → `gh pr create` → `gh pr merge --auto --squash` → 等 CI。
+  → **意义**:「上线由人确认」由**结构**保证,而不是靠谁记得;CI 从此**真的能拦住**未通过的东西进 main
+  (此前"直提 main"模式下,CI 在 push **之后**才跑,红叉只等于"记了一笔",东西已经上去了)。
+  → 回退:`gh api -X DELETE repos/heweidong-ecco/agent-eval-gate/branches/main/protection`。
 - **避坑库(跨项目 · 给 Agent 读)**:`~/Desktop/知识库/18.Agent避坑库-问题解决策略/`
   —— 过程问题的**解决策略**集中于此。核心原则:**纪律不在每会话必读的文件里 = 等于没有;纪律没有触发点 = 早晚会漏** → 落地用**三层结构:锚点(看得见)→ hook(提醒)→ CI(躲不掉)**。
   **踩坑后照其 §6 体例追加一篇,勿只写在聊天/commit 里**。本仓已挂指针;`.claude/hooks/kb-drift-sentinel.sh`(SessionStart)在库变动时提醒;库路径可用 `KB_AVOID_PITFALLS_DIR` 覆盖(跨机器时用)。
