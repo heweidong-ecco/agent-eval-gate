@@ -13,7 +13,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _load_dotenv(path: Path | None = None) -> None:
-    """把仓库根 .env 里 KEY=value 行读进 os.environ(不覆盖已存在的变量)。"""
+    """把仓库根 .env 里 KEY=value 行读进 os.environ(不覆盖已存在的变量)。
+
+    `EVAL_DOTENV=0` 时**整段跳过** —— 测试需要真正「未配置 judge」的环境,而本函数用
+    `setdefault` 会把 .env 里的真 key **重新灌回**,只删环境变量是删不干净的:
+    本机 .env 有真 key,「未配置」用例会真的发起 HTTP 调用(既慢又花钱)。
+    """
+    if os.getenv("EVAL_DOTENV") == "0":
+        return
     env_file = path or Path(ROOT / ".env")
     if not env_file.is_file():
         return
