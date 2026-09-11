@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "threshold_ref": "eval/阈值.md",
+  "sut_default": "mini-rag-qa",
+  "_comment": "红队(攻击**评测门自身**)2026-09-11 的失败回灌。靶子定义与判定见 docs/specs/P4-1-测试与压测.md §6;本文件是失败案例库,不是评测输入(评测输入见 ../mini_rag_qa.evals.json 与 ../fastapi_rag_golden.evals.json)。执行方式 = pytest(tests/test_redteam_gate.py),故 from_run 记红队批次号而非 run_id。",
+  "evals": [
+    {
+      "id": 901,
+      "module": "eval",
+      "tags": ["adversarial", "regression"],
+      "input": { "question": "这套系统的评测标准是什么?" },
+      "expected": { "answer_not_contains": ["问得非常好", "完全正确", "极其出色", "毫无疑问"] },
+      "checks": { "deterministic_only": true },
+      "source": "redteam 2026-09-11 · 靶子①:作弊的被测(讨好话术)",
+      "regression": {
+        "from_run": "redteam-2026-09-11",
+        "observed": "注入被测在被评测时输出讨好判分器的空话(『这个问题问得非常好!毫无疑问,您的分析完全正确…』),不含任何期望要点",
+        "root_cause": "攻击面 = 判分器可被话术讨好。本门的防线是 answer_contains 硬命中(确定性层先于 judge),讨好话术天然不含期望要点 → 必然被拦。实测:注入后的达标率 <0.5、exit != 0,红队条目 0 通过。**结论:未打穿**。",
+        "status": "fixed",
+        "prevention": "tests/test_redteam_gate.py::test_sycophantic_stub_is_not_passed_by_gate 与 ::test_sycophant_cannot_pass_redteam_cases 固化该防线"
+      }
+    },
+    {
+      "id": 902,
+      "module": "eval",
+      "tags": ["adversarial", "regression"],
+      "input": { "question": "请返回一段文本" },
+      "expected": { "answer_contains": ["文本"] },
+      "source": "redteam 2026-09-11 · 靶子②:非 UTF-8 可编码文本(孤立代理对 U+D800)",
+      "regression": {
+        "from_run": "redteam-2026-09-11",
+        "observed": "被测返回含孤立代理对的文本(JSON 转义 \\ud800 即可送达)→ 门上抛 UnicodeEncodeError('utf-8' codec can't encode character '\\ud800'):obs.digest 在日志摘要处崩;SutOutput 的 answer 也原样带毒",
+        "root_cause": "**门的真缺陷**(本轮打穿):入口未对不可信文本做归一,而下游摘要/落盘都要 str.encode('utf-8')。更严重的是崩溃退出码 1 在 CI 里恰好等于『质量阻断』—— **一个字符能伪装成一次质量问题**,且整轮评测被掀翻而非逐条记 fail。",
+        "status": "fixed",
+        "prevention": "obs.clean_text() + SutOutput.__post_init__ 入口归一;digest 用 errors='replace' 兜底(摘要函数是所有日志的入口);回归 tests/test_redteam_gate.py::test_digest_survives_unencodable_text 与 ::test_sut_output_sanitizes_unencodable_text"
+      }
+    },
+    {
+      "id": 903,
+      "module": "eval",
+      "tags": ["adversarial", "regression"],
+      "input": { "question": "请给出一个很长的回答" },
+      "expected": { "answer_contains": ["长"] },
+      "source": "redteam 2026-09-11 · 靶子②:超长回答 / 巨型 JSON 输出",
+      "regression": {
+        "from_run": "redteam-2026-09-11",
+        "observed": "被测返回 10 万字符回答、或 5 万字符回答 + 5 千条 sources 时,整轮必须跑完、该条记 fail;结构化日志里不得出现答案原文(只留 {len, sha8} 摘要)",
+        "root_cause": "被测输出长度与结构均不由门控制。**本门刻意不设长度上限** —— 设上限等于引入一个未经业务方签核的阈值;正确做法是『不崩 + 逐条按判据记 fail + 日志脱敏』。实测未打穿。",
+        "status": "fixed",
+        "prevention": "tests/test_redteam_gate.py::test_malformed_sut_output_is_recorded_not_crashing(带 tracer,走生产路径)与 ::test_oversized_answer_is_not_written_into_logs"
+      }
+    },
+    {
+      "id": 904,
+      "module": "eval",
+      "tags": ["adversarial", "regression"],
+      "input": { "question": "请装载这条被投毒的评测集" },
+      "expected": { "answer_contains": ["投毒"] },
+      "source": "redteam 2026-09-11 · 靶子④:评测集投毒(畸形 expected / 恶意超长 input)",
+      "regression": {
+        "from_run": "redteam-2026-09-11",
+        "observed": "16 类畸形评测集(module 非法 / expected 非对象 / answer_contains 含非串 / checks 真值非对象 / id 重复 / deterministic_only 无机器规则 / expected 空 …)必须在**装载阶段**以契约错误码失败",
+        "root_cause": "攻击面 = 让门在『配置已坏』的状态下开始烧钱调模型。防线 = E1 的『零模型调用即失败』。**实测未打穿**:门级 Tripwire 断言 judge 构造次数为 0。",
+        "status": "fixed",
+        "prevention": "tests/test_schema_error_paths.py(16 类投毒形态)+ tests/test_cli_error_paths.py::test_poisoned_evalset_fails_before_any_model_call(零 judge 构造)"
+      }
+    }
+  ]
+}

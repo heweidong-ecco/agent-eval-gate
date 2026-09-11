@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from eval_gate import mini_rag
-from eval_gate.obs import digest
+from eval_gate.obs import clean_text, digest
 from eval_gate.rules import REFUSAL_LEXICON
 from eval_gate.schema import Case
 
@@ -47,7 +47,13 @@ class SutErrorCode(enum.Enum):
 
 @dataclass
 class SutOutput:
-    """被测输出的归一化表示(评测门只认这个)。"""
+    """被测输出的归一化表示(评测门只认这个)。
+
+    `__post_init__` 做**不可信输入归一**:被测(或被人投毒的中间层)可能返回
+    含孤立代理对的文本(JSON 转义 `"\\ud800"` 即可送达),而下游的摘要/落盘
+    都会 `str.encode("utf-8")` —— 不归一就会把整轮评测掀翻,且崩溃退出码 1
+    在 CI 里恰好等于「质量阻断」,一个字符能伪装成一次质量问题。
+    """
 
     answer: str
     refused: bool = False
@@ -55,6 +61,10 @@ class SutOutput:
     tool_calls: list[dict] = field(default_factory=list)
     raw: Any = None
     meta: dict = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.answer = clean_text(self.answer)
+        self.sources = [clean_text(s) for s in self.sources]
 
     def as_dict(self) -> dict:
         d = asdict(self)

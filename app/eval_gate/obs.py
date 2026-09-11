@@ -63,11 +63,28 @@ def span_name(kind: str, ident) -> str:
     return f"{kind}/{ident}"
 
 
+def clean_text(text: str) -> str:
+    """把**无法用 UTF-8 编码**的字符(如孤立代理对)替换掉,其余原样返回。
+
+    被测是不可信输入:一个 `"\\ud800"`(JSON 转义即可送达)就能让下游任何
+    `str.encode("utf-8")`(摘要、报告落盘)抛 UnicodeEncodeError。
+    在**入口**把文本归一,比在每个下游各修一次可靠。
+    """
+    if not isinstance(text, str):
+        return text
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return text.encode("utf-8", "replace").decode("utf-8", "replace")
+    return text
+
+
 def digest(text) -> dict:
     """脱敏摘要:只留长度与 sha256 前 8 位 —— 日志里**永不**出现原文。
 
     接受任意类型(非 str 先 JSON 序列化),便于给**响应体**之类结构做摘要:
     异常消息里只放 `digest(body)`,不放 body 本身(见 KD 记录:错误路径曾泄漏被测原文)。
+    对不可编码文本用 replace 兜底 —— 摘要函数是**所有日志的入口**,它崩 = 整轮崩。
     """
     if isinstance(text, str):
         s = text
@@ -75,7 +92,8 @@ def digest(text) -> dict:
         s = ""
     else:
         s = json.dumps(text, ensure_ascii=False, default=str)
-    return {"len": len(s), "sha8": hashlib.sha256(s.encode("utf-8")).hexdigest()[:8]}
+    raw = s.encode("utf-8", "replace")
+    return {"len": len(s), "sha8": hashlib.sha256(raw).hexdigest()[:8]}
 
 
 def _short_id(value) -> str:
