@@ -89,7 +89,7 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
   ⇒ 首轮 0.75 是缺陷伪影。预算实测 2.35–2.91 万/轮 ⇒ **按 3 万报备**。
   ⚠️ 唯一失败 id=19 是**判分器的稳定误判**(被测答对了),暴露 `judge_human_agreement` **未接线** ⇒ 见 ROADMAP 交接第 3 条。
 - **✅ 阶段4-步骤8 已收口(2026-09-11)**:`docs/reports/P4-1/` **7 份报告 + 基准 JSON**;覆盖率 **94.44%**(CI 硬门 85%)、335 用例;门自身开销 **0.051 ms/case**;A/B 装置就绪(N≥20 分辨 5–10pp);红队四靶子**打穿 1 处已修**(孤立代理对)。选型 `DEC-003`;过程错误 7 条见 `docs/复盘/2026-09-11-P4-1-过程错误.md`。
-- **🔜 下一步 = 阶段4-步骤9(`P4-2`:系统级全链路/量化)** —— **详见 ROADMAP「交接:下一步做什么」**(三件事:解「乙未跑」的环境阻断 / `ideal_tool_seq` 回放 / 真实 judge 的 A/B)。
+- **🔜 下一步 = 阶段4-步骤9(`P4-2`:系统级全链路/量化)** —— **详见 ROADMAP「交接:下一步做什么」的任务清单**(T1 判分器可靠性 / T2 真实基线沉淀 / T3 回放 / T4 真实 A/B;含前置与预算)。
 - **✅ 两个严重问题已修(2026-09-11)** —— 详见 ROADMAP「本轮完成」与 `notes/blind-test/`:
   - **问题 A(skills 不触发 / KD-9)**:三个口子已堵 —— ①**可规避**改为检测留痕(豁免必须带理由 `[no-test: <理由>]`;`.githooks/post-commit` 绕过留痕,**不受 `--no-verify` 抑制**;CI 用 `tools/check_gate_bypass.py` **逐提交重算**);②拦截力复测(见下,未测到);③用量**修口径不修量级**(失效判据 = **种类覆盖**,不是次数)。
   - **问题 B(子 Agent 拿不到纪律 / 新登记 KD-10)**:`.claude/hooks/subagent-guard.sh`(SubagentStart)**把纪律注入子 Agent 上下文** —— 实机验证到达(`hook_additional_context`),且子 Agent **照注入第 6 条报告了格式**(行为被改变)。到达可证伪:`tools/check_subagent_injection.py`。
