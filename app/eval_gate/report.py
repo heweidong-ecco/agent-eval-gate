@@ -20,6 +20,16 @@ def format_duration(seconds) -> str:
     return f"{total // 60}m{total % 60}s"
 
 
+def format_ratio(v) -> str:
+    """0..1 的比率 → 给人读的百分比串(`0.85` → `85%`)。
+
+    报告/日志展示用。口径:整数百分比不带小数点;真小数保留(`0.855` → `85.5%`),
+    不做四舍五入成整数 —— 展示要能反映真实精度。`%g` 顺带吃掉二进制浮点噪声
+    (`0.07 * 100 == 7.000000000000001`,不能漏进串里)。
+    """
+    return f"{v * 100:g}%"
+
+
 def write_run(result, outdir: str | Path, ev_path: str | Path, judge_label: str) -> Path:
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
