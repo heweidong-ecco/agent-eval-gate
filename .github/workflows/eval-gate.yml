@@ -31,8 +31,12 @@ jobs:
         # 与 tests/test_hooks.py(**门禁防腐**:语法/可执行/已注册/该拦的拦)
         # 覆盖率下限 85%(实测基线 89%;B 05-模块-评估与测试:60 目标 ≥80%);
         # 配置见 pyproject [tool.coverage.*],由 tests/test_coverage_gate.py 守。
-        run: pytest -q --junitxml=/tmp/junit.xml \
-             --cov=eval_gate --cov-report=term-missing --cov-fail-under=85
+        # ⚠️ 必须用块标量(|):YAML 的 plain scalar 会把换行**折成空格**,而**反斜杠是字面量** ——
+        # 于是 `\ ` 把空格转义,`--junitxml=… --cov=eval_gate` 被当成**一个参数**,
+        # pytest 立刻报用法错误 ⇒ 该步 **0 秒失败**(2026-09-12 实测踩到,还掩盖了另一个真失败)。
+        run: |
+          pytest -q --junitxml=/tmp/junit.xml \
+            --cov=eval_gate --cov-report=term-missing --cov-fail-under=85
 
       - name: 测试报告合规检查(防"假测试":空跑 / skip 冒充通过)
         # 口径:total>0 ∧ 失败=0 ∧ 错误=0 ∧ 跳过 ≤ 基线(默认 2 = live_smoke 的 2 条)

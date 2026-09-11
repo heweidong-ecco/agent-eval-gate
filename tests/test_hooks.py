@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / ".claude" / "hooks"
@@ -906,3 +907,44 @@ def test_ci_runs_the_same_setup_step():
     """CI 必须跑**同一个脚本**(而非内联一行)—— 否则"安装步骤有效"没被验证。"""
     wf = (ROOT / ".github" / "workflows" / "eval-gate.yml").read_text(encoding="utf-8")
     assert "setup-hooks.sh" in wf, "CI 未执行 tools/setup-hooks.sh"
+
+
+# ── ④ CI 工作流自身的语法陷阱(2026-09-12 补)─────────────────────────────────
+# 动机:在某一步的 `run:` 里写了 **shell 续行符 `\`** —— YAML 的 plain scalar 会把换行
+# **折成空格**,而**反斜杠是字面量** ⇒ `\ ` 把空格转义 ⇒ 两个参数被拼成一个
+# ⇒ 命令立刻报用法错误 ⇒ 该 CI 步 **0 秒失败**,而且**掩盖了另一个真失败**。
+# ⇒ 用块标量(|)即可。本测试守住"这类拼接错误不再溜进来"。
+
+def _workflow_runs():
+    """产出 (workflow 文件名, step 名, 该步的 run 字符串)。"""
+    for wf in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+        try:
+            doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
+        except Exception:  # YAML 本身坏了由别的检查负责
+            continue
+        for job in (doc.get("jobs") or {}).values():
+            for step in (job.get("steps") or []):
+                run = step.get("run")
+                if isinstance(run, str):
+                    yield wf.name, step.get("name") or step.get("uses") or "?", run
+
+
+def test_workflow_run_steps_have_no_escaped_space():
+    """CI 各步的 `run` **不得含 `\\ `(反斜杠+空格)** —— 那是 YAML 折行把参数拼坏的签名。
+
+    这类错误的特征极隐蔽:YAML 合法、workflow 能跑,但该步 **0 秒失败**,
+    且会**掩盖**同一 job 里后续本该暴露的真失败(2026-09-12 实测)。
+    """
+    bad = []
+    for wf_name, step_name, run in _workflow_runs():
+        for line in run.splitlines():
+            if "\\ " in line:
+                bad.append(f"{wf_name} · {step_name}: {line.strip()!r}")
+    assert not bad, "CI 步里出现被转义的空格(命令会被拼错):\n  " + "\n  ".join(bad)
+
+
+def test_workflow_run_steps_are_parseable_commands():
+    """顺带:每步 `run` 非空且不含 NUL 等明显坏字符(防止粘进不可见字符)。"""
+    for wf_name, step_name, run in _workflow_runs():
+        assert run.strip(), f"{wf_name} · {step_name} 的 run 为空"
+        assert "\x00" not in run, f"{wf_name} · {step_name} 含 NUL"
