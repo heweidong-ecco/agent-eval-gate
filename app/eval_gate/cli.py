@@ -93,6 +93,27 @@ def _cmd_run(args) -> int:
         print(f"  通过 {s['passed']}/{s['total']} · 失败 {s['failed']} · 存疑 {s['flag']} · 跳过 {s['skipped']} · 红队突破 {s['redteam_hits']} · 达标率 {s['completion']:.2f}")
         if result.degraded:
             print(f"  ⚠ DEGRADED(整批 aborted,不算全绿): {result.degraded_reason}")
+        # 判定归属:未通过条目**当场说清是谁拦的**,不让人从 verdict 反推。
+        # 动机(2026-09-12 实证):曾连续两轮把"确定性层拦下的"误读成"判断器判错" ——
+        # 一手字段(deterministic/judge_verdict)一直都在报告里,但摘要里看不见,于是被跳过。
+        bad = [c for c in result.cases if c.get("verdict") not in (None, "pass")]
+        if bad:
+            print(f"  未通过 {len(bad)} 条(判定归属):")
+            for c in bad[:10]:
+                det = (c.get("deterministic") or {}).get("passed")
+                jv = c.get("judge_verdict")
+                if c.get("judge_used") and not det and jv != "pass":
+                    who = "确定性层拦下(期望未命中)"
+                elif c.get("judge_used") and det and jv != "pass":
+                    who = f"判断器拦下(judge={jv})"
+                elif det is False:
+                    who = "确定性层拦下(期望未命中)"
+                else:
+                    who = f"判定归属见报告(deterministic={det}, judge={jv})"
+                note = next((r for r in (c.get("reasons") or []) if "未命中" in r), "")
+                print(f"    id={c['id']}: {who}" + (f" · {str(note)[:60]}" if note else ""))
+            if len(bad) > 10:
+                print(f"    …(其余 {len(bad) - 10} 条见报告)")
         for b in result.blockers:
             print(f"  ✗ BLOCK: {b}")
         if result.exit_code == 0:

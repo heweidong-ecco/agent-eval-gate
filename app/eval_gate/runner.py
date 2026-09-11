@@ -197,6 +197,10 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
             if jsp is not None:
                 jsp.attributes["verdict"] = jv.verdict
     res["judge_used"] = True
+    # 判定归属:分开记录 judge **自己**的判定,便于事后分辨"这条是谁拦的"。
+    # 动机(2026-09-12 实证):报告原先只存合并后的 verdict,导致连续两轮把
+    # "确定性层拦下的"误归因成"judge 判错" —— 正确信息其实一直在一手字段里。
+    res["judge_verdict"] = jv.verdict
     res["verdict"] = "pass" if (rule.passed and jv.verdict == "pass") else ("flag" if jv.verdict == "flag" else "fail")
     res["score"] = jv.score if rule.passed else 0.0
     res["reasons"] = list(rule.hits) + list(jv.reasons)
@@ -219,6 +223,7 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
 
     case_results: list[dict] = []
     passed = failed = flag = redteam_hits = skipped = 0
+    disagreements: list[int] = []      # 确定性层与 judge **判定打架**的 case_id
     degraded = False
     degraded_reason: str | None = None
 
@@ -308,6 +313,12 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
 
             res, _used = _grade_case(case, output.answer, output.sources, active_judge, tracer)
             res["refused"] = output.refused
+            # 两套判据是否打架:**只观测,不改判定**(不放松也不收紧门)。
+            # 「确定性层判 fail 而 judge 判 pass」= 语义对、字面没命中 ⇒ 期望候选可能漏了措辞形态;
+            # 「确定性层判 pass 而 judge 判 fail」= 字面命中但判分器不认。
+            # 两种都值得人看一眼,故计数 + 出声,但不进阈值。
+            if res.get("deterministic", {}).get("passed") != (res.get("judge_verdict") == "pass"):
+                disagreements.append(case.id)
             case_results.append(res)
             if res["verdict"] == "pass":
                 passed += 1
@@ -341,6 +352,8 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
     summary = {
         "total": total, "passed": passed, "failed": failed, "flag": flag,
         "skipped": skipped, "redteam_hits": redteam_hits, "completion": round(completion, 4),
+        # 只观测、不参与阈值判定(见上方注释)。>0 时也会打一条 warn 日志。
+        "rule_judge_disagreements": len(disagreements),
     }
 
     if degraded:
@@ -356,6 +369,14 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
 
     judge_label = active_judge.label() if active_judge else "offline"
     judge_usage = getattr(active_judge, "usage", None)
+    if tracer is not None and disagreements:
+        # 静默的不一致 = 没人会去看。故这里**出声**,但不改判定(不进阈值、不阻断)。
+        tracer.log("warn", "run", "judge_disagree",
+                   input={"count": len(disagreements)},
+                   output={"case_ids": disagreements[:20],
+                           "note": "确定性层与判断器判定不一致:仅观测,不参与阈值;建议人工看一眼"},
+                   status=STATUS_DEGRADED,
+                   span_id=root.span_id if root is not None else None)
     if tracer is not None:
         # 汇总日志归属根 span(此时已退出上下文,故显式传 span_id,保链路可重建)
         tracer.log("warn" if (degraded or blockers) else "info", "run", "evaluate",
