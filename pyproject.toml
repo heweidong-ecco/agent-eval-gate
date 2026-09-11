@@ -9,7 +9,7 @@ description = "Agent 生产就绪评测门:评测集 + 确定性规则 + LLM-as-
 requires-python = ">=3.10"
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-cov>=5"]
 
 [project.scripts]
 eval-gate = "eval_gate.cli:main"
@@ -20,3 +20,13 @@ packages = ["eval_gate"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+# 只量被测包;__main__ 是 `python -m` 入口 shim,不含逻辑
+source = ["eval_gate"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+# 下限 = 85(实测基线 89%,留 4pp 抖动余量;B 目标 ≥80%)
+fail_under = 85
+show_missing = true
