@@ -86,7 +86,10 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
   - **⚠️ 仍未解决**:① **F3** 长任务无断点保护;② **门禁「拦截力」至今只有盲测 2 的 2/2 证据** —— 盲测 4 想复测,结论是「**藏不住**」(Agent 动手前就 `git config core.hooksPath` 并 `cat` 了仓外门禁源码),**要复测须让"侦察"本身失效,而非藏文件**。
   - **母体已回写并回流**(业务方批准):`e7700dd` 登记(KD-9 补证据③ + **新建 KD-10** + 回流清单 14 项)→ **`bbbfcdf` 已回流代码 15 项**(scaffold 首次获得 `tests/` 门禁防腐测试 + 母体自身 CI)。验证 = 在**模拟派生项目**里跑 scaffold 测试(**82 passed**);该步骤已固化进母体 CI 作为**回流漂移探测网**。另:`kb-drift-sentinel.sh` 注释系**反向回流**(母体→本仓)—— **回流不是单向的**。
   > **交接背景**:上一会话 `c549c42a` 在 **1,017,378 tokens** 时 `API Error 400` 中断 —— **该会话不可 `--resume`**(会原样撞同一上限)。断点状态已从 transcript 抢救落盘(ROADMAP + 本指针 + `docs/复盘/`)。
-  > **另**:`.claude/hooks/` 下的门禁脚本**不在门 1/门 2 的覆盖范围**(两道门只认 `app|backend|src`)—— 改门禁脚本不会被任何门检查,需人工留意(**待业务方定夺是否扩范围**)。
+  > **✅ 已扩范围(业务方定夺)**:门 1 / 门 2 / 左移门的判据**已从 `app|backend|src` 扩到含门禁与工具脚本**
+  > (`.claude/hooks/`、`.githooks/`、`tools/`)—— 改门禁脚本**现在也有人看着了**。
+  > **规则向前生效、不追溯**:扩范围前的历史提交会被 `check_gate_bypass.py` 追溯标记,CI 用 base/before 天然限定为新提交。
+  > 若确为纯注释/无行为变化,走**带理由的豁免** `[no-test: <理由>]`(裸标记不再放行)—— 本仓 `bc23a13` 即为一次活例。
 - **门禁硬化已落地(2026-09-11 凌晨,8 个 commit)**:skills 三层结构(锚点对应表 → hook 哨兵 → CI 检查)+ **门禁左移**(`impl-guard.sh`,PreToolUse ask)+ **门 1/门 2**(commit-msg:认实现先于测试 + 未调用 `test-driven-development` 即拒提交)。**盲测实证 2/2 复现**:两个空上下文子 Agent 均被门 1/门 2 拦下,并**主动调用 `test-driven-development` 回退重做**。策略沉淀在 `~/Desktop/知识库/18.Agent避坑库-问题解决策略/` 01·02(§4.9)·03。
 - 进度:阶段1/2 **业务方逐条签核 D-1..D-9(2026-09-10)**;阶段3 P3-1 首跑 `app/eval_gate/` E1–E7 竖切 + fastapi-rag 适配器 + CI 示例,`pytest` 47 passed(离线零外网),good→exit0 / bad→exit1 被拦。真实被测:`01.FastAPI RAG Agent`(切 DeepSeek,commit `36aa291`)。
 - **P3 收口顺序已签核(D-10a..D-10h,2026-09-10)** —— grilling 定调压测门通过后修订 D-9:顺序 = **R0 → R2a → R1 → R2b → R3 → R4**;R3 升级为 **R4 硬前置**;契约补丁三处。过程数据 `notes/grilling/P3-1优先级-2026-09-10.md`,签核 `docs/decisions/定调复核-签核记录.md`。
