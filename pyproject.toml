@@ -30,3 +30,8 @@ omit = ["*/__main__.py"]
 # 下限 = 85(实测基线 89%,留 4pp 抖动余量;B 目标 ≥80%)
 fail_under = 85
 show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    # 脚本入口 shim:测试走 `python -m eval_gate`,进的是 __main__.py,到不了这里
+    "if __name__ == .__main__.:",
+]
