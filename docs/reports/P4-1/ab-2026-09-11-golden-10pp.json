@@ -1,0 +1,101 @@
+{
+  "tool": "tools/ab_regression.py",
+  "mode": "offline-jitter",
+  "warning": "离线模式的方差来源是**合成抖动**(JitterJudge 按概率判 pass,种子可复现),不代表真实模型噪声;本文件只用于标定统计装置与给出 N 的下界。真实 judge 的 A/B 需预算报备后以 --live 运行。",
+  "evals": {
+    "file": "eval/fastapi_rag_golden.evals.json",
+    "cases": 40
+  },
+  "arms": {
+    "baseline": {
+      "p": 0.9,
+      "rates": [
+        0.725,
+        0.65,
+        0.75,
+        0.65,
+        0.65,
+        0.675,
+        0.725,
+        0.65,
+        0.6,
+        0.675,
+        0.6,
+        0.7,
+        0.675,
+        0.625,
+        0.7,
+        0.525,
+        0.675,
+        0.65,
+        0.7,
+        0.65
+      ]
+    },
+    "candidate": {
+      "p": 0.8,
+      "rates": [
+        0.65,
+        0.625,
+        0.675,
+        0.55,
+        0.525,
+        0.525,
+        0.6,
+        0.6,
+        0.6,
+        0.6,
+        0.625,
+        0.65,
+        0.6,
+        0.525,
+        0.55,
+        0.7,
+        0.625,
+        0.55,
+        0.6,
+        0.575
+      ]
+    }
+  },
+  "single_experiment": {
+    "u": 69.5,
+    "p": 0.0003795917519927583,
+    "d": 1.2881892425213803,
+    "verdict": "regressed",
+    "n_a": 20,
+    "n_b": 20,
+    "effect_defined": true
+  },
+  "detection_curve": [
+    {
+      "n": 6,
+      "detection_rate": 0.5,
+      "repeats": 10
+    },
+    {
+      "n": 13,
+      "detection_rate": 0.8,
+      "repeats": 10
+    },
+    {
+      "n": 20,
+      "detection_rate": 1.0,
+      "repeats": 10
+    }
+  ],
+  "detection_rate": 1.0,
+  "stats_summary": {
+    "baseline_mean": 0.6625,
+    "candidate_mean": 0.5974999999999999
+  },
+  "run": {
+    "commit": "72d86d5",
+    "n": 20,
+    "repeats": 10,
+    "seed": 7,
+    "seed_offset_b": 9973,
+    "elapsed_s": 11.28,
+    "timestamp": "2026-09-11T21:26:29+0800"
+  }
+}
