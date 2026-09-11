@@ -69,10 +69,28 @@
   `main` 要求 **PR** + **必需检查 `eval`** + **`enforce_admins: true`**(**管理员亦不可直推**,实测被拒:
   `GH006 Protected branch update failed … Changes must be made through a pull request`);
   同时**已开 auto-merge** ⇒ **CI 绿后自动合并,无需人工点**(业务方无需实时跟随)。
-  → **工作方式**:建分支 → 推 → `gh pr create` → `gh pr merge --auto --squash` → 等 CI。
-  → **意义**:「上线由人确认」由**结构**保证,而不是靠谁记得;CI 从此**真的能拦住**未通过的东西进 main
-  (此前"直提 main"模式下,CI 在 push **之后**才跑,红叉只等于"记了一笔",东西已经上去了)。
-  → 回退:`gh api -X DELETE repos/heweidong-ecco/agent-eval-gate/branches/main/protection`。
+
+  **标准动作(照做即可)**:
+  ```bash
+  git checkout -b <类型>/<短名>            # 1. 建分支(类型:feat/fix/docs/chore)
+  #   …改动… && git add … && git commit …
+  git push -u origin <分支名>              # 2. 推分支(传几十 KB,快)
+  gh pr create --base main --head <分支名> --title "<同 commit 标题>" --body "<为什么>"
+  gh pr merge --auto --squash              # 3. 开 auto-merge —— 之后**不用管**
+  ```
+  **之后不必守着**:CI 在 **GitHub 侧**跑(20–30s),绿了**自动合并**。随时回来查:
+  ```bash
+  gh pr list --state all --limit 5                    # 最近几个 PR 的结果
+  gh pr view <n> --json state,mergedAt                # 某一个的状态
+  gh pr checks <n>                                    # 检查明细
+  gh run view <run-id> --log-failed                   # 失败时**读日志正文**(已解锁)
+  git checkout main && git pull                       # 合并后同步本地;再删分支
+  ```
+  **CI 红时**:PR **卡住不合**(**失败方向是安全的** —— 不会"网络慢就误合") ⇒ 读日志 → 修 → 再推分支,auto-merge 自动继续。
+  **为什么这样**:「上线由人确认」由**结构**保证,而不是靠谁记得;CI 从此**真的能拦住**未通过的东西进 main
+  (此前"直提 main"模式下,CI 在 push **之后**才跑,红叉只等于"记了一笔",东西已经上去了 —— 见 2026-09-11 CI #17–#33)。
+  **前置**:`gh` 已装(v2.100.0,**官方二进制** —— `brew` 在 macOS 13 上已拒绝安装任何东西,真因非网络)并已 `gh auth login`。
+  **回退保护**:`gh api -X DELETE repos/heweidong-ecco/agent-eval-gate/branches/main/protection`。
 - **避坑库(跨项目 · 给 Agent 读)**:`~/Desktop/知识库/18.Agent避坑库-问题解决策略/`
   —— 过程问题的**解决策略**集中于此。核心原则:**纪律不在每会话必读的文件里 = 等于没有;纪律没有触发点 = 早晚会漏** → 落地用**三层结构:锚点(看得见)→ hook(提醒)→ CI(躲不掉)**。
   **踩坑后照其 §6 体例追加一篇,勿只写在聊天/commit 里**。本仓已挂指针;`.claude/hooks/kb-drift-sentinel.sh`(SessionStart)在库变动时提醒;库路径可用 `KB_AVOID_PITFALLS_DIR` 覆盖(跨机器时用)。
