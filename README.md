@@ -13,6 +13,9 @@
 # 1) 安装(零运行时依赖,纯标准库;dev 装 pytest)
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
+# 1b) 激活本地门禁钩子(**必做**,否则提交门禁静默失效)
+./tools/setup-hooks.sh      # 把 git 的 core.hooksPath 指向 .githooks/
+
 # 2) 离线自证:用自带的迷你被测跑一轮(不联网、不要密钥)
 .venv/bin/python -m eval_gate run --evals eval/mini_rag_qa.evals.json --mode good --offline   # → exit 0
 .venv/bin/python -m eval_gate run --evals eval/mini_rag_qa.evals.json --mode bad  --offline   # → exit 1(劣化被拦)

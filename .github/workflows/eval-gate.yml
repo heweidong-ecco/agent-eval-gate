@@ -14,6 +14,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0        # 需要历史,供下面的「改动留痕」检查做 diff
+
+      - name: 激活本地门禁钩子(与开发者 setup 走**同一脚本**)
+        # `core.hooksPath` 是**本机 git 配置,克隆不携带** ⇒ 不跑这一步,新克隆/CI 上
+        # 本地硬门静默失效。本步同时让 tests/test_hooks.py 那条「hooksPath 必须指向
+        # .githooks」的断言变成"验证安装脚本有效",而不是"验证某台机器碰巧配过"。
+        run: ./tools/setup-hooks.sh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"

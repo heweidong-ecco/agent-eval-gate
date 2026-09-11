@@ -851,3 +851,58 @@ def test_skill_sentinel_no_hookspath_warning_when_correct():
 def test_sentinels_silent_when_disabled(name):
     r = _run(HOOKS / name, "{}", {})
     assert r.returncode == 0 and r.stdout.strip() == ""
+
+
+# ── ③ 安装步骤本身(2026-09-12 补)───────────────────────────────────────────
+# 动机:`core.hooksPath` 是**本机 git 配置,克隆不携带** ⇒ 新克隆/CI 上本地门禁
+# **静默失效**。而"怎么装"原先**没有任何文档、也没有任何脚本**(README/docs/CI grep 命中 0)。
+# 旧的那条 `test_commit_msg_hook_is_activated_by_git_config` 断言"已配置" ——
+# 于是**任何干净克隆(含 CI)必红**,而那正是 CI 长期红的真因(F2 当时修了两条,漏了这条)。
+# ⇒ 修法不是改那条断言(它是对的),而是把**安装步骤脚本化**,让 CI 与开发者走同一条路。
+
+SETUP_HOOKS = ROOT / "tools" / "setup-hooks.sh"
+
+
+def test_setup_hooks_script_exists_and_is_executable():
+    """安装脚本必须存在且可执行 —— 它是"门禁怎么装"的单一事实源。"""
+    assert SETUP_HOOKS.is_file(), "缺 tools/setup-hooks.sh:门禁的安装步骤无处可依"
+    assert SETUP_HOOKS.stat().st_mode & 0o111, "setup-hooks.sh 不可执行"
+    r = subprocess.run(["bash", "-n", str(SETUP_HOOKS)], capture_output=True, text=True)
+    assert r.returncode == 0, f"语法错误: {r.stderr}"
+
+
+def test_setup_hooks_activates_hookspath_in_a_fresh_repo(tmp_path):
+    """在**干净的临时仓库**里跑脚本 → `core.hooksPath` 必须真的被指过去。
+
+    ⚠️ 必须隔离在临时仓库:本文件里那条「本机已配置」的断言,正是**读了当前工作区**
+    才在 CI 上必红的 —— 新测试不能重犯同一个错(F2)。
+    """
+    d = tmp_path / "fresh"
+    d.mkdir()
+    subprocess.run(["git", "init", "-q", str(d)], check=True, capture_output=True)
+    shutil.copytree(GITHOOKS, d / ".githooks")
+
+    r = subprocess.run(["bash", str(SETUP_HOOKS)], cwd=str(d), capture_output=True, text=True)
+    assert r.returncode == 0, f"脚本失败: {r.stderr}"
+
+    got = subprocess.run(["git", "config", "core.hooksPath"], cwd=str(d),
+                         capture_output=True, text=True).stdout.strip()
+    assert got == ".githooks", f"core.hooksPath 未被设置,实际 = {got!r}"
+
+    # 幂等:重复执行不应报错
+    again = subprocess.run(["bash", str(SETUP_HOOKS)], cwd=str(d), capture_output=True, text=True)
+    assert again.returncode == 0, f"重复执行失败: {again.stderr}"
+
+
+def test_setup_hooks_fails_clearly_outside_a_git_repo(tmp_path):
+    """不在 git 仓库内时要**明确报错退出**,不静默成功。"""
+    r = subprocess.run(["bash", str(SETUP_HOOKS)], cwd=str(tmp_path),
+                       capture_output=True, text=True)
+    assert r.returncode == 1
+    assert "不在 git 仓库" in r.stderr
+
+
+def test_ci_runs_the_same_setup_step():
+    """CI 必须跑**同一个脚本**(而非内联一行)—— 否则"安装步骤有效"没被验证。"""
+    wf = (ROOT / ".github" / "workflows" / "eval-gate.yml").read_text(encoding="utf-8")
+    assert "setup-hooks.sh" in wf, "CI 未执行 tools/setup-hooks.sh"
