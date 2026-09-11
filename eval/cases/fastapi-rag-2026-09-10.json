@@ -5,9 +5,21 @@
   "_comment": "R1b 真实链路冒烟的 6 条失败回灌(2026-09-10)。格式见同目录 README.md;每条必须带 regression.root_cause。本文件保留在 eval/ 供 CI 校验('失败集完整性检查'),不是评测输入 —— 评测输入见 ../fastapi_rag_golden.evals.json。",
   "evals": [
     {
-      "id": 12, "module": "rag", "tags": ["regression"],
-      "input": { "question": "Docker 和 Redis 可以如何配合使用？" },
-      "expected": { "answer_contains": ["容器化", "Docker 部署 Redis", "容器化部署"] },
+      "id": 12,
+      "module": "rag",
+      "tags": [
+        "regression"
+      ],
+      "input": {
+        "question": "Docker 和 Redis 可以如何配合使用？"
+      },
+      "expected": {
+        "answer_contains": [
+          "容器化",
+          "Docker 部署 Redis",
+          "容器化部署"
+        ]
+      },
       "source": "01.FastAPI RAG Agent archive eval_dataset.json id:11",
       "regression": {
         "from_run": "20260910-221513-dde2e4d6",
@@ -18,9 +30,22 @@
       }
     },
     {
-      "id": 14, "module": "rag", "tags": ["regression"],
-      "input": { "question": "FastAPI 和 LangChain 能一起使用吗？" },
-      "expected": { "answer_contains": ["提供 API", "提供API", "API 接口", "API接口"] },
+      "id": 14,
+      "module": "rag",
+      "tags": [
+        "regression"
+      ],
+      "input": {
+        "question": "FastAPI 和 LangChain 能一起使用吗？"
+      },
+      "expected": {
+        "answer_contains": [
+          "提供 API",
+          "提供API",
+          "API 接口",
+          "API接口"
+        ]
+      },
       "source": "01.FastAPI RAG Agent archive eval_dataset.json id:13",
       "regression": {
         "from_run": "20260910-221513-dde2e4d6",
@@ -31,55 +56,105 @@
       }
     },
     {
-      "id": 15, "module": "rag", "tags": ["regression"],
-      "input": { "question": "向量数据库在 RAG 中的作用是什么？" },
-      "expected": { "answer_contains": ["相似性搜索", "相似性检索", "相似度检索", "近似最近邻", "向量检索"] },
+      "id": 15,
+      "module": "rag",
+      "tags": [
+        "regression"
+      ],
+      "input": {
+        "question": "向量数据库在 RAG 中的作用是什么？"
+      },
+      "expected": {
+        "answer_contains": [
+          "相似性搜索",
+          "相似性检索",
+          "相似度检索",
+          "近似最近邻",
+          "向量检索"
+        ]
+      },
       "source": "01.FastAPI RAG Agent archive eval_dataset.json id:14",
       "regression": {
         "from_run": "20260910-221513-dde2e4d6",
         "observed": "根据现有资料，无法回答。现有上下文仅提到向量数据库常用于相似性搜索和推荐系统[来源:2]，但没有说明它在 RAG 中的作用。",
-        "root_cause": "语料已在库(seed 已灌 62 篇)但未被召回 —— R1b 口径 mode=accurate_norerank 关闭重排，检索召回率下降。",
-        "status": "open",
-        "prevention": "阶段4 评估：对比 accurate(开重排)与 accurate_norerank 的召回差异；若确认是召回问题，考虑调 top_k 或评估重排带来的收益/成本"
+        "root_cause": "**根因已更正(2026-09-12)** —— 原写「语料在库但未召回(关重排致召回率下降)」是**推测,未取证**。实测:该条在最终基线轮(run `20260912-002123-0d20f24e`,39/40)**通过**,召回 `[73, 8, 66]`;而第 3 轮失败时召回**切题**,只是语料**没有正面写「向量数据库在 RAG 中的作用」**。⇒ 真实根因是**期望超出语料**,与「召回率下降」无关 —— 补入语料(doc 73)后即通过。",
+        "status": "fixed",
+        "prevention": "✅ **已解决**:补入语料(2026-09-12,documents id 73,`source=eval-gap-fill-2026-09-12`);最终基线轮通过。⚠️ **原待办「对比 accurate vs accurate_norerank 的召回差异」未执行**,且其前提(召回率下降)**已被本条证伪** —— 保留为**未复核的遗留问题**,不阻塞。"
       }
     },
     {
-      "id": 18, "module": "rag", "tags": ["regression"],
-      "input": { "question": "RAG 系统需要哪些核心技术？" },
-      "expected": { "answer_contains": ["LangChain", "向量数据库", "FastAPI"] },
+      "id": 18,
+      "module": "rag",
+      "tags": [
+        "regression"
+      ],
+      "input": {
+        "question": "RAG 系统需要哪些核心技术？"
+      },
+      "expected": {
+        "answer_contains": [
+          "LangChain",
+          "向量数据库",
+          "FastAPI"
+        ]
+      },
       "source": "01.FastAPI RAG Agent archive eval_dataset.json id:17",
       "regression": {
         "from_run": "20260910-221513-dde2e4d6",
         "observed": "根据现有资料，无法回答。",
-        "root_cause": "同 id15：语料在库(含 LangChain/向量数据库/FastAPI 三者)但未召回。",
-        "status": "open",
-        "prevention": "同 id15，阶段4 一并核查"
+        "root_cause": "**根因已更正(2026-09-12)** —— 原写「语料在库但未召回」是**推测**。实测:该条属**查询改写静默降级**那一簇(第 1 轮召回到占位文档 `[12,13]`),根因是**被测侧** `query_rewriter` 的 `max_tokens` 被推理吃满 → 改写成空 → 空查询检索。⇒ 与语料/召回无关,是**被测缺陷**。",
+        "status": "fixed",
+        "prevention": "✅ **已解决**:被测修复 `85e456b`(改写空则回退原问题 + max_tokens 200→800);修复后第 4 轮通过,召回 `[73, 69, 71]`。"
       }
     },
     {
-      "id": 20, "module": "rag", "tags": ["regression"],
-      "input": { "question": "混合检索比纯向量检索好在哪里？" },
-      "expected": { "answer_contains": ["互补", "取长补短"] },
+      "id": 20,
+      "module": "rag",
+      "tags": [
+        "regression"
+      ],
+      "input": {
+        "question": "混合检索比纯向量检索好在哪里？"
+      },
+      "expected": {
+        "answer_contains": [
+          "互补",
+          "取长补短"
+        ]
+      },
       "source": "01.FastAPI RAG Agent archive eval_dataset.json id:19",
       "regression": {
         "from_run": "20260910-221513-dde2e4d6",
         "observed": "根据现有资料，无法回答。现有上下文仅介绍了向量数据库…常用于相似性搜索和推荐系统，但没有提供关于混合检索及其与纯向量检索对比的信息。",
-        "root_cause": "同 id15：语料「向量检索理解语义，BM25 精确匹配关键词，两者结果互补」已在库却未召回。",
-        "status": "open",
-        "prevention": "同 id15"
+        "root_cause": "**根因待复核(2026-09-12)** —— 原写「语料在库却未召回」。实测:该条在今晚四轮中**均通过**(最终轮召回 `[55, 60, 8]`),并不属于占位文档那一簇。⇒ 阶段3 的那次失败**未逐条复核**,有可能同源于当时已存在的**查询改写空返回**缺陷(被测 .env 于 2026-09-10 迁移至推理型模型)。",
+        "status": "fixed",
+        "prevention": "✅ **当前通过**(最终基线轮);**遗留**:阶段3 该次失败的归因未复核,若再复现按新证据定性。"
       }
     },
     {
-      "id": 26, "module": "rag", "tags": ["regression"],
-      "input": { "question": "文档中提到了几种数据库？" },
-      "expected": { "answer_contains": ["三种", "三类", "3 种", "3种"] },
+      "id": 26,
+      "module": "rag",
+      "tags": [
+        "regression"
+      ],
+      "input": {
+        "question": "文档中提到了几种数据库？"
+      },
+      "expected": {
+        "answer_contains": [
+          "三种",
+          "三类",
+          "3 种",
+          "3种"
+        ]
+      },
       "source": "01.FastAPI RAG Agent archive eval_dataset.json id:25",
       "regression": {
         "from_run": "20260910-221513-dde2e4d6",
         "observed": "根据现有资料，文档中提到了两种数据库：向量数据库 [来源:2] 和 Redis [来源:3]。",
-        "root_cause": "检索未召回 PostgreSQL 那篇 → 被测按召回到的 2 篇如实作答，计数错误实为召回不全的下游表现。",
-        "status": "open",
-        "prevention": "同 id15;另注:本条为「计数类」提问，对召回完整性极敏感，宜作为召回质量的探针用例"
+        "root_cause": "**根因已更正(2026-09-12)** —— 原写「检索未召回 PostgreSQL 那篇」。实测:第 3 轮召回 `[8, 58, 66]` **切题**,被测答「明确称为数据库的有 2 种(向量数据库、PostgreSQL),Redis 仅称存储系统」—— **它的回答是有据的**;而期望「三种」来自被测原始数据集(指向当时那份语料)。⇒ 是**期望与当前语料不一致**,不是召回问题。",
+        "status": "fixed",
+        "prevention": "✅ **已解决**:补入语料(2026-09-12,documents id 71);最终基线轮通过,答「三种数据库」。⚠️ 该条对召回完整性极敏感(原注),**保留作召回质量探针用例** ✓。"
       }
     }
   ]
