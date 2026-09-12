@@ -36,6 +36,26 @@ def test_ci_evalset_trace_guard_accepts_all_three_legitimate_paths():
         assert path in line, f"留痕守卫未接受合法路径 {path!r}(清单被收窄了?)"
 
 
+def test_ci_evalset_trace_guard_reads_unquoted_paths():
+    """取改动清单时必须 `-c core.quotePath=false`。
+
+    **动机(2026-09-12 CI 实测,不是防御性臆想)**:`git diff --name-only` 默认对**非 ASCII 路径**
+    做 C-quoting ⇒ 输出 `"docs/decisions/DEC-005-golden\\351\\233\\206…"`(行首是双引号),
+    `^…` 正则**永远匹配不上**。后果:本仓的 `docs/复盘/`(全中文名)**从来没生效过** ——
+    是死代码;直到新增 `docs/decisions/` 才把潜伏 bug 引爆。
+
+    ⚠️ 本仓**中文文件名的目录**(`docs/复盘/`、`docs/decisions/`)正是这条路径的主要使用者,
+    所以这个 flag 不能删。
+    """
+    text = WORKFLOW.read_text(encoding="utf-8")
+    diff_lines = [ln for ln in text.splitlines() if "diff --name-only" in ln]
+    assert diff_lines, "未找到取改动清单的命令(工作流被改动?)"
+    for ln in diff_lines:
+        assert "core.quotePath=false" in ln, (
+            "取改动清单未关掉 quotePath ⇒ 中文路径会被 C-quoting,"
+            f"留痕守卫将永远匹配不上:{ln.strip()!r}")
+
+
 def _case_files():
     return sorted(CASES_DIR.glob("*.json"))
 

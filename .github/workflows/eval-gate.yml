@@ -62,7 +62,14 @@ jobs:
         run: |
           set -e
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
-          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || true)
+          # ⚠️ `-c core.quotePath=false` 是**必需的**,不是洁癖:
+          #    git 默认对**非 ASCII 路径**做 C-quoting ⇒ 输出成
+          #    `"docs/decisions/DEC-005-golden\351\233\206…"`(带双引号 + 八进制转义),
+          #    行首是 `"` 而不是 `docs/…` ⇒ **下面的 `^…` 正则永远匹配不上**。
+          #    2026-09-12 实测:本仓的 `eval/cases/` 文件名是 ASCII 所以一直能匹配,
+          #    而 `docs/复盘/`(全中文名)**从来就没生效过 —— 是死代码**;
+          #    直到新增 `docs/decisions/` 才把这个潜伏 bug 引爆(CI 红,读日志定位)。
+          CHANGED=$(git -c core.quotePath=false diff --name-only "$BASE" HEAD 2>/dev/null || true)
           echo "$CHANGED" | sed 's/^/  changed: /'
           if echo "$CHANGED" | grep -qE '^eval/(fastapi_rag_golden\.evals\.json|mini_rag_qa\.evals\.json|阈值\.(md|json))'; then
             # 留痕有三条合法路径(2026-09-12 补第三条,见 DEC-005):
