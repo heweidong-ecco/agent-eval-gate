@@ -4,7 +4,7 @@
 > 领域权威 = B 知识库(`知识库-Agent-System`,只增不改);本文件纪律引 Kit `README.md` 消歧(术语:memory/观测/MCP/CI 门 勿串义)。
 
 ## 项目
-- 一句话:给其它 Agent 系统做「生产就绪评测门」:评估集 + LLM-as-Judge + 回放回归 + CI eval-gate。目标用户=跑 Agent/AI 应用的团队;解决他们『能不能上线、上线质量可不可量化』的痛点。。事实源 = `需求基线.md`(业务口径以它为准;B 阶段1 成果物落这里)。
+- 一句话:给其它 Agent 系统做「生产就绪评测门」:评估集 + LLM-as-Judge + CI eval-gate(**回放回归 = v1.1**,签核 D-3)。**第一版使用者 = 你自己(及你后续各 Agent 项目):自用先行,验证价值后再外化**(`需求基线.md:157`,已拍板;对外访谈尚未做);解决『能不能上线、上线质量可不可量化』的痛点。事实源 = `需求基线.md`(业务口径以它为准;B 阶段1 成果物落这里)。
 - 完整流程 = `docs/RUNBOOK.md`(自本 Kit 拷入;指 B 6阶段×12步 + 14 模块)。
 - B 知识库绝对路径:`/Users/heweidong/Desktop/Product/product-agent-dev-os/知识库-Agent-System`,如 `/Users/heweidong/Desktop/Product/product-agent-dev-os/知识库-Agent-System`(含 README 分层索引;阶段卡在 `04-分阶段工作流/`,模块在 `05-独立模块工作流/`)。
 
