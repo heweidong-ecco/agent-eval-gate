@@ -43,6 +43,23 @@ class SutAdapter:
 - 治理:限速 ≤ 被测配额(该被测用户级 ~3 req/s → 适配器内置 pacing/退避);依赖其 DashScope embedding(检索)正常、生成侧可切任意 OpenAI 兼容(被测仓 commit `36aa291`)。
 - 版本控制变量:知识库在被测 DB 不在 git → 评测门首跑需**自带 golden 文档集 + seed 步骤**(控制变量),否则检索结果不可复现(来源标注进 run 报告)。
 
+## toolkit-qa / toolkit-extract 适配器(M3 第二家被测 · 一家两形态)
+- 被测:`ai-field-delivery-toolkit`(FDE 交付工具包)`POST /prototype/run`。
+  **同一入口、`template` 不同 ⇒ 两个注册 id**(形态是本案的验证对象,故在 id 上分开)。
+- 配置:`EVAL_SUT_TOOLKIT_BASE_URL`(默认 `http://127.0.0.1:8100/api/v1`)· `EVAL_SUT_TOOLKIT_KB`(`kb_run_id`)。
+- 请求体:`{template, user_input:<问题>[, kb_run_id]}`;**不传 `project_id`** ——
+  传了会走被测的「数据未达标不进原型」门禁(403),那是它的内部治理,不是本门要判的行为。
+- 响应映射:resp.`result` → SutOutput.answer;`sources[]` → **短标识** `"<source>#<序号>"`
+  (⚠️ 不落分块正文:`observability/日志-schema.md:1`「长文本正文不入日志」)。
+- ⚠️ **两形态的硬差异(实现方必守)**:
+  - `toolkit-qa`(`knowledge_qa`)→ **必须带 `kb_run_id`**(不带就不走 RAG);答案含引用 `[n]`;
+  - `toolkit-extract`(`information_extraction`)→ **不得带 `kb_run_id`**:被测的 `create_extract_agent()`
+    **不接受该参数**,带上会 TypeError → 500。输出是**结构化文本**(`实体名 | 类型 | 属性键=值`)。
+- ⚠️ **被测内部故障 ≠ 答得不好**:被测上游 LLM 调用失败时,它把失败信息**当答案**返回(HTTP 仍 200,
+  文本形如 `…未能完成（LLM 调用失败：…）`)。适配器**必须**识别并映射为 `E_SUT_5XX` ——
+  判成答案 = 拿被测的基础设施故障扣它的质量分(与第一家"配额耗尽被读成质量崩了"同类)。
+- 治理:本地部署**无鉴权**;Chroma 为**嵌入式 PersistentClient**,不起向量库服务(见 M3 检查单)。
+
 ## mini-rag-qa 适配器(自带 · 自证工具用)
 - 嵌入式迷你 RAG(如 BM25 over 自带小文档集),无外部服务/额度依赖;输出与 SutOutput 同构。用途:U1 自证 + 北极星/阈值首样本标定(DEC-001)。
 

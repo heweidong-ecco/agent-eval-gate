@@ -172,3 +172,28 @@ def test_usage_stays_zero_for_string_chat_stub():
     j = Judge(JudgeConfig(), chat=lambda m: json.dumps({"verdict": "pass", "score": 1.0}))
     j.grade(ITEM)
     assert j.usage["calls"] == 0 and j.usage["total_tokens"] == 0
+
+
+# ── 替身与**生产路径**必须同判(M3 实测暴露的不一致)────────────────
+def test_fake_judge_refusal_matches_the_hard_layer_lexicon():
+    """⚠️ **离线自证用的 FakeJudge,其拒答判定必须与硬层一致**。
+
+    M3 接入第二家被测时实测到这处不一致:该被测拒答说「知识库中未找到相关信息」,
+    硬层(`rules.REFUSAL_LEXICON` + 正则)**认出来了**(hard_passed=True),
+    而 FakeJudge(只认 6 个词)**漏了** ⇒ 离线彩排把该条报成 fail。
+    ⇒ 若把替身的行为当成门的缺陷,就会去改一个**本来没坏**的判据。
+    (同类教训:04 篇「跑通了≠在测东西」—— 替身与生产路径不一致,离线结论就不代表线上。)
+    """
+    from eval_gate.judge import FakeJudge, build_item
+    phrasings = ["知识库中未找到相关信息。", "资料中没有相关说明。", "我不掌握该信息。",
+                 "无法回答。", "抱歉,我不清楚。"]
+    for text in phrasings:
+        item = build_item(1, "q", {"must_refuse": True}, text)
+        assert FakeJudge().grade(item).verdict == "pass", f"替身漏判拒答:{text!r}"
+
+
+def test_fake_judge_does_not_pass_a_real_answer_for_must_refuse():
+    """反向守护:真答了就不能放过(must_refuse 是硬判据)。"""
+    from eval_gate.judge import FakeJudge, build_item
+    item = build_item(1, "q", {"must_refuse": True}, "2019 年 3 月成立,创始人是陈立。")
+    assert FakeJudge().grade(item).verdict == "fail"

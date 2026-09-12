@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "threshold_ref": "eval/阈值.md",
+  "sut_default": "toolkit-extract",
+  "_comment": "M3 第二家被测的**形态 B**(information_extraction,结构化文本抽取)冒烟集。⚠️ 与形态 A 的关键差异:抽取**不需要知识库**(被测的 create_extract_agent 不接受 kb_run_id),输入文本直接写在问题里 ⇒ 本题集**不依赖索引**。输出形如 `实体名 | 类型 | 属性键=属性值`,每行一条。⚠️ 判据局限:本门软层是「含其一即符」,对抽取任务**偏弱**(抽对 1 个实体即算过);故配套用 `answer_not_contains`(硬层,判分器不可翻案)来测**精度/不臆造** —— 这是本形态唯一能拿到硬判据的地方。",
+  "evals": [
+    { "id": 1, "module": "task", "tags": ["happy-path"], "input": {"question": "请从这句话中抽取实体:陈立于 2019 年 3 月创立了星尘科技,公司总部设在杭州。"}, "expected": {"answer_contains": ["陈立", "星尘科技", "杭州"], "answer_not_contains": ["王敏", "李强"]}, "source": "冒烟:三实体齐备;禁现词是**语料里存在但本句未出现**的人名 ⇒ 测不臆造" },
+    { "id": 2, "module": "task", "tags": ["happy-path"], "input": {"question": "请抽取实体与属性:「星尘云」是云托管服务,2024 年发布 3.0 版本,由平台组负责。"}, "expected": {"answer_contains": ["星尘云", "2024", "平台组"], "answer_not_contains": ["算法组", "前端组"]}, "source": "冒烟:属性抽取(年份/责任组);禁现词是同段真实存在但**属于别的产品**的组名" },
+    { "id": 3, "module": "task", "tags": ["happy-path", "boundary"], "input": {"question": "请抽取实体:「星尘洞察」于 2025 年发布 2.1 版本,主打实时看板与异常检测。"}, "expected": {"answer_contains": ["星尘洞察", "2025", "2.1"], "answer_not_contains": ["星尘工坊", "星尘云"]}, "source": "冒烟:版本号是易错项(2.1 vs 3.0 vs 1.x);禁现词是**同族但不同**的产品名" },
+    { "id": 4, "module": "task", "tags": ["boundary", "no-hallucination"], "input": {"question": "请从这句话中抽取人名、组织名与地点:「今天天气很好,我们打算下午去公园散步。」"}, "expected": {"answer_not_contains": ["陈立", "星尘科技", "杭州", "王敏", "算法组"]}, "source": "冒烟:**无可抽实体** ⇒ 不得臆造(硬层禁现,判分器不可翻案)" }
+  ]
+}

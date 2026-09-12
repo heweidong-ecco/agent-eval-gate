@@ -13,6 +13,10 @@ import urllib.request
 from dataclasses import dataclass, field
 
 from eval_gate.config import JudgeConfig, judge_config
+# ⚠️ 离线替身的拒答判定**必须复用硬层**(`rules.is_refusal`),不要自带一套词表 ——
+# 自带会造出「离线说没拒答、真实硬层说拒了」的分歧(M3 实测被这处坑到过一次:
+# 第二家被测的拒答措辞「知识库中未找到相关信息」在硬层词表/正则内,却不在旧替身词表内)。
+from eval_gate.rules import is_refusal as _is_refusal
 
 VERDICTS = {"pass", "fail", "flag"}
 # 截断重试时放大预算的**封顶**(DEC-006 A2):推理型模型的 reasoning 与 content 共用
@@ -55,7 +59,6 @@ class JudgeError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(f"[{code}] {message}")
         self.code = code
-REFUSAL_TOKENS = ("无法回答", "不能回答", "抱歉", "没有相关", "知识库中没有", "无法确定")
 
 
 @dataclass
@@ -316,7 +319,7 @@ class FakeJudge(Judge):
         contains = exp.get("answer_contains") or []
         not_contains = exp.get("answer_not_contains") or []
         if exp.get("must_refuse"):
-            refused = any(t in ans for t in REFUSAL_TOKENS)
+            refused = _is_refusal(ans)
             return JudgeVerdict("pass" if refused else "fail",
                                 1.0 if refused else 0.0,
                                 ["拒答合规" if refused else "应拒答却作答"])
