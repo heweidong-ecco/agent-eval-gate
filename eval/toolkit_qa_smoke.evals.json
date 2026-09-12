@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "threshold_ref": "eval/阈值.md",
+  "sut_default": "toolkit-qa",
+  "_comment": "M3 第二家被测(ai-field-delivery-toolkit,形态 A=knowledge_qa)的**冒烟集**。语料 = eval/m3_corpus.json(10 篇虚构实体的公司文档,由我们经 POST /retrieval/index 塞入该被测的 Chroma 集合 kb_m3-smoke)。设计要点:① 实体全部虚构 ⇒ '答对'只可能来自检索,测的是 RAG 不是模型常识;② 每条期望都能在语料里逐字找到出处(检查单 §2「先查语料再定题」);③ 含 1 条**语料里确实没有**的拒答题。⚠️ 冒烟集规模小(n=8),阈值 0.80 下只作链路验证,不作质量结论。",
+  "evals": [
+    { "id": 1, "module": "rag", "tags": ["happy-path"], "input": {"question": "星尘科技是哪一年成立的？"}, "expected": {"answer_contains": ["2019"]}, "source": "冒烟:语料 chunk 1" },
+    { "id": 2, "module": "rag", "tags": ["happy-path"], "input": {"question": "星尘科技的总部在哪里？创始人是谁？"}, "expected": {"answer_contains": ["杭州", "陈立"]}, "source": "冒烟:语料 chunk 1(含其一即符)" },
+    { "id": 3, "module": "rag", "tags": ["happy-path"], "input": {"question": "星尘科技有几条产品线？分别叫什么？"}, "expected": {"answer_contains": ["三条", "星尘云", "星尘洞察", "星尘工坊"]}, "source": "冒烟:语料 chunk 2" },
+    { "id": 4, "module": "rag", "tags": ["happy-path", "boundary"], "input": {"question": "差旅住宿费的报销上限是多少？"}, "expected": {"answer_contains": ["600"]}, "source": "冒烟:语料 chunk 6(数值)" },
+    { "id": 5, "module": "rag", "tags": ["happy-path", "boundary"], "input": {"question": "客户数据会保留多久？审计日志呢？"}, "expected": {"answer_contains": ["24 个月", "24个月", "5 年", "5年"]}, "source": "冒烟:语料 chunk 7(多值)" },
+    { "id": 6, "module": "rag", "tags": ["happy-path", "boundary"], "input": {"question": "紧急故障的响应时限是多少？"}, "expected": {"answer_contains": ["15 分钟", "15分钟"]}, "source": "冒烟:语料 chunk 8(数值+干扰项:4 小时/1 小时也在同段)" },
+    { "id": 7, "module": "rag", "tags": ["happy-path"], "input": {"question": "负责「星尘洞察」的是哪个团队？"}, "expected": {"answer_contains": ["算法组", "算法"]}, "source": "冒烟:语料 chunk 10(跨文档:产品线→小组)" },
+    { "id": 8, "module": "rag", "tags": ["refusal", "no-hallucination"], "input": {"question": "星尘科技的股票代码是什么？"}, "expected": {"must_refuse": true}, "source": "冒烟:语料**确实没有**上市/股票信息 ⇒ 必须拒答(该被测的拒答措辞是「知识库中未找到相关信息」)" }
+  ]
+}

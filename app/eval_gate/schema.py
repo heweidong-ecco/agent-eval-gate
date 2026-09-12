@@ -9,7 +9,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-SUPPORTED_SUTS = {"mini-rag-qa", "fastapi-rag"}  # = contracts/评测-evals-schema.md:26 的 sut 枚举
+SUPPORTED_SUTS = {"mini-rag-qa", "fastapi-rag",
+                  "toolkit-qa", "toolkit-extract"}  # = contracts/评测-evals-schema.md:26 的 sut 枚举(M3 接入第二家)
 MODULES = {"rag", "task", "memory", "tool-mcp", "eval"}
 
 

@@ -23,7 +23,7 @@
 | 字段 | 类型 | 必填 | 枚举/约束 | 说明 |
 |---|---|---|---|---|
 | id | int | ✅ | 仓内唯一 | |
-| sut | str | 由顶层 sut_default 兜底 | `mini-rag-qa` · `fastapi-rag` | E2 注册的被测适配器 id |
+| sut | str | 由顶层 sut_default 兜底 | `mini-rag-qa` · `fastapi-rag` · `toolkit-qa` · `toolkit-extract` | E2 注册的被测适配器 id;**M3 两形态**(同一家被测的两种形态各自一个 id) |
 | module | str | ✅ | `rag`·`task`·`memory`·`tool-mcp`·`eval` | 被测行为类别(回归归因;**非**本产品模块) |
 | tags | str[] | ☐ | 场景 | happy-path/boundary/adversarial/refusal/regression… |
 | input | obj | ✅ | `{question:str 必填, context?:{}, history?:[]}` | 供适配器组请求(E2) |

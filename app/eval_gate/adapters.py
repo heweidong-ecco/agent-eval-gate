@@ -193,6 +193,109 @@ class FastApiRagAdapter(SutAdapter):
                               f"被测 4xx(HTTP {status});响应摘要 {digest(data)}", status=status)
 
 
+class ToolkitPrototypeAdapter(SutAdapter):
+    """M3 第二家被测:`ai-field-delivery-toolkit`(FDE 交付工具包)的 `/prototype/run` 适配器。
+
+    **一家被测、两种形态**(同一入口,`template` 不同 ⇒ 两个注册 id):
+    - `toolkit-qa`      → `knowledge_qa`:RAG 检索问答,**答案带引用 `[n]`,并回传 `sources[]`**;
+    - `toolkit-extract` → `information_extraction`:**结构化文本**抽取(`实体名 | 类型 | 属性键=值`)。
+
+    配置:`EVAL_SUT_TOOLKIT_BASE_URL`(默认 `http://127.0.0.1:8100/api/v1`)
+    · `EVAL_SUT_TOOLKIT_KB`(`kb_run_id`,由 `POST /retrieval/index` 建库后得到)。
+    ⚠️ 该服务**无鉴权**(本地部署),故不发鉴权头。
+
+    ⚠️ **抽取形态不得带 `kb_run_id`**:被测的 `create_extract_agent()` **不接受该参数**,
+    带上会 TypeError → 500(读签名时才发现,已由测试守住)。
+    """
+
+    id = "toolkit-prototype"
+    template = "knowledge_qa"
+    sends_kb = True
+
+    # 被测**内部**失败时,它会把这些话当"答案"返回(HTTP 仍是 200)。
+    # 判成答案 = 拿被测的基础设施故障扣它的质量分(与第一家"配额耗尽被读成质量崩了"同类)。
+    _INTERNAL_FAILURE_MARKERS = ("LLM 调用失败", "调用异常")
+
+    def __init__(self, base_url: str | None = None, kb_run_id: str | None = None,
+                 post: Callable | None = None, timeout_s: float = 180.0,
+                 quality: str | None = None, template: str | None = None):
+        # quality = E5 调度层的统一签名;此被测无"改好/改坏 prompt"旋钮 ⇒ 接收并忽略。
+        self.base_url = (base_url or os.getenv("EVAL_SUT_TOOLKIT_BASE_URL",
+                                               "http://127.0.0.1:8100/api/v1")).rstrip("/")
+        self.kb_run_id = kb_run_id if kb_run_id is not None else os.getenv("EVAL_SUT_TOOLKIT_KB", "")
+        self.timeout_s = timeout_s
+        self._post = post or self._default_post
+        if template:
+            self.template = template
+
+    def _default_post(self, url: str, headers: dict, payload: dict) -> tuple[int, dict]:
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=body, method="POST", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                return resp.status, json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            try:
+                data = json.loads(e.read().decode("utf-8"))
+            except (json.JSONDecodeError, OSError):
+                data = {}
+            return e.code, data
+        except urllib.error.URLError as e:
+            raise SutAdapterError(SutErrorCode.E_SUT_TIMEOUT, f"被测不可达: {e}")
+
+    def run_case(self, case: Case) -> SutOutput:
+        payload: dict[str, Any] = {"template": self.template,
+                                   "user_input": case.input["question"]}
+        if self.sends_kb:
+            if not self.kb_run_id:
+                raise SutAdapterError(
+                    SutErrorCode.E_SUT_BAD_RESPONSE,
+                    "QA 形态需要 kb_run_id:先 POST /retrieval/index 建库,或设 EVAL_SUT_TOOLKIT_KB")
+            payload["kb_run_id"] = self.kb_run_id
+        # ⚠️ 不传 project_id:传了会走被测的「数据未达标不进原型」门禁(403),那是它的内部治理,
+        # 不是我们要判的行为(见 M3 检查单 §1)。
+        status, data = self._post(f"{self.base_url}/prototype/run",
+                                  {"Content-Type": "application/json"}, payload)
+        if status == 200:
+            result = data.get("result")
+            if not isinstance(result, str) or not result.strip():
+                raise SutAdapterError(SutErrorCode.E_SUT_BAD_RESPONSE, "响应无 result 文本")
+            if any(m in result for m in self._INTERNAL_FAILURE_MARKERS):
+                # 被测侧故障(上游 LLM 不可用/配额),**不是**它答得不好
+                raise SutAdapterError(SutErrorCode.E_SUT_5XX,
+                                      f"被测内部调用失败;响应摘要 {digest(data)}")
+            return SutOutput(
+                answer=result,
+                # 来源归一化为**短标识**(长文本正文不入日志/报告,见 observability/日志-schema.md:1)
+                sources=[f"{s.get('source', 'kb')}#{i}"
+                         for i, s in enumerate(data.get("sources") or [], 1) if isinstance(s, dict)],
+                raw=data,
+                meta={"sut": self.id, "template": self.template, "http_status": status,
+                      "llm_mode": data.get("llm_mode")},
+            )
+        # 错误分级同 `contracts/评测-sut-adapter.md`;异常消息**绝不**带响应体原文(同 fastapi-rag)。
+        if status in (401, 403):
+            code = SutErrorCode.E_SUT_AUTH if status == 401 else SutErrorCode.E_SUT_QUOTA
+            raise SutAdapterError(code, f"被测拒绝(HTTP {status});响应摘要 {digest(data)}", status=status)
+        if status >= 500:
+            raise SutAdapterError(SutErrorCode.E_SUT_5XX,
+                                  f"被测 5xx(HTTP {status});响应摘要 {digest(data)}", status=status)
+        raise SutAdapterError(SutErrorCode.E_SUT_4XX,
+                              f"被测 4xx(HTTP {status});响应摘要 {digest(data)}", status=status)
+
+
+class ToolkitQaAdapter(ToolkitPrototypeAdapter):
+    id = "toolkit-qa"
+    template = "knowledge_qa"
+    sends_kb = True
+
+
+class ToolkitExtractAdapter(ToolkitPrototypeAdapter):
+    id = "toolkit-extract"
+    template = "information_extraction"
+    sends_kb = False          # 模板不接受 kb_run_id(带了 → TypeError → 500)
+
+
 class MiniRagQaAdapter(SutAdapter):
     """自带迷你 RAG-QA 被测(包装 mini_rag);quality 模拟 prompt 好坏。"""
 
@@ -233,3 +336,5 @@ def list_adapters() -> list[str]:
 
 register_adapter(MiniRagQaAdapter.id, MiniRagQaAdapter)
 register_adapter(FastApiRagAdapter.id, FastApiRagAdapter)
+register_adapter(ToolkitQaAdapter.id, ToolkitQaAdapter)
+register_adapter(ToolkitExtractAdapter.id, ToolkitExtractAdapter)
