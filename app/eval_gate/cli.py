@@ -94,23 +94,31 @@ def _cmd_run(args) -> int:
         if result.degraded:
             print(f"  ⚠ DEGRADED(整批 aborted,不算全绿): {result.degraded_reason}")
         # 判定归属:未通过条目**当场说清是谁拦的**,不让人从 verdict 反推。
-        # 动机(2026-09-12 实证):曾连续两轮把"确定性层拦下的"误读成"判断器判错" ——
-        # 一手字段(deterministic/judge_verdict)一直都在报告里,但摘要里看不见,于是被跳过。
+        # 动机(2026-09-12 实证):曾连续两轮把"确定性层拦下的"误读成"判分器判错" ——
+        # 一手字段一直都在报告里,但摘要里看不见,于是被跳过。
+        # 2026-09-12 二次修正(DEC-004 §3,签核 D-15):判据已分层,措辞必须**按层说** ——
+        # 「期望未命中」在分层后**已不再拦截**(软层交判分器),再这么说就是假话。
         bad = [c for c in result.cases if c.get("verdict") not in (None, "pass")]
         if bad:
             print(f"  未通过 {len(bad)} 条(判定归属):")
             for c in bad[:10]:
-                det = (c.get("deterministic") or {}).get("passed")
+                det = c.get("deterministic") or {}
                 jv = c.get("judge_verdict")
-                if c.get("judge_used") and not det and jv != "pass":
-                    who = "确定性层拦下(期望未命中)"
-                elif c.get("judge_used") and det and jv != "pass":
-                    who = f"判断器拦下(judge={jv})"
-                elif det is False:
-                    who = "确定性层拦下(期望未命中)"
+                hard = det.get("hard_passed")
+                if c.get("deterministic_only"):
+                    # 红队/注入**从不走 judge**(契约不变量)⇒ 必须单独指名,
+                    # 否则会打成"判定归属见报告(judge=None)",把人带偏。
+                    who = "硬层拦下(红队/注入:不进 judge)"
+                elif hard is False and jv != "pass":
+                    who = "硬层与判分器都拦下"
+                elif hard is False:
+                    who = "硬层拦下(必拒/禁现/空回答)"
+                elif c.get("judge_used"):
+                    who = f"判分器拦下(judge={jv})"
                 else:
-                    who = f"判定归属见报告(deterministic={det}, judge={jv})"
-                note = next((r for r in (c.get("reasons") or []) if "未命中" in r), "")
+                    who = f"判定归属见报告(deterministic={det.get('passed')}, judge={jv})"
+                note = next((r for r in (c.get("reasons") or [])
+                             if "未命中" in r or "禁现" in r), "")
                 print(f"    id={c['id']}: {who}" + (f" · {str(note)[:60]}" if note else ""))
             if len(bad) > 10:
                 print(f"    …(其余 {len(bad) - 10} 条见报告)")

@@ -27,13 +27,19 @@
 | module | str | ✅ | `rag`·`task`·`memory`·`tool-mcp`·`eval` | 被测行为类别(回归归因;**非**本产品模块) |
 | tags | str[] | ☐ | 场景 | happy-path/boundary/adversarial/refusal/regression… |
 | input | obj | ✅ | `{question:str 必填, context?:{}, history?:[]}` | 供适配器组请求(E2) |
-| expected | obj | ☐(deterministic_only 时部分必填) | `{answer_contains?:[], answer_not_contains?:[], must_refuse?:bool, ideal_tool_seq?:[]}` | 语义期望;`answer_contains` 为"含其一即符" |
+| expected | obj | ☐(deterministic_only 时部分必填) | `{answer_contains?:[], answer_not_contains?:[], must_refuse?:bool, ideal_tool_seq?:[]}` | 语义期望;**判据分层(DEC-004,签核 D-15)**:`answer_contains` 为"含其一即符"的**语义期望**,由**判分器**裁决 —— 确定性层未命中**不单独构成 fail**;`answer_not_contains` / `must_refuse` 为**硬判据**,由确定性层裁决,**判分器不可翻案** |
 | checks | obj | ☐ | `{deterministic_only?:bool}` | `true` = 红队/注入,只走 E3 不进 LLM-judge |
 | source | str | ☐ | 外部数据来源标注 | 如 `01.FastAPI RAG Agent archive eval_dataset.json id:12` |
 
 ### 校验规则(不变量)
 1. `deterministic_only:true` 的 case **必须**能由确定性规则判定:即 `expected.must_refuse` 显式(true/false)或 `answer_not_contains` 非空;否则拒绝(无法表达"禁止出现")。
 2. `expected` 为空且非 deterministic_only → 拒绝(judge 无参照则允许但须 `judge.model` 指定且人工基线存在——MVP 前一律要求非空)。
+3. **匹配口径随层走(DEC-004 §2.2,签核 D-15)**:`answer_not_contains` 比较前**归一化**
+   —— 去所有空白(含全角 `U+3000`)+ 统一小写,方向**偏严**(硬层无兜底,误报比漏报安全);
+   可抓住「无 法 回 答」这类插空格 / 改大小写的**规避**。
+   `answer_contains` **保持字面匹配**,不得归一化(它已交判分器,归一化不影响 verdict,只会污染观测)。
+4. **硬判据的判定权**:`must_refuse` / `answer_not_contains` / 空回答的失败**不可被 judge 翻案**;
+   合入规则见 `评测-report.md` 的「判定归属」段。
 3. 顶层 `sample.max_cases` 默认全量;抽样必须带 `seed`(可复现)。
 
 ## 接口

@@ -31,13 +31,37 @@
 // report(E7 报告 + 审计;逐条留证据)
 {
   "summary": { "total": 100, "passed": 92, "failed": 5, "flag_human": 2, "skipped": 1,
-               "redteam_hits": 0, "judge_human_agreement": 0.9 },
+               "redteam_hits": 0, "judge_human_agreement": 0.9,
+               "soft_miss_judge_pass": 0, "rule_hit_judge_fail": 0 },
   "thresholds": {"applied": {…}, "met": false, "blockers": ["l2_task_completion"]},
   "cases": [ {"id":1,"verdict":"pass","score":0.9,"reasons":["…"],"evidence_refs":[],
-              "deterministic":{"passed":true},"meta":{}} ],
+              "deterministic":{"passed":true,"hard_passed":true,"soft_missed":false},
+              "judge_verdict":"pass","meta":{}} ],
   "artifacts": {"report_path": "…", "log_path": "…"}
 }
 ```
+
+## 判定归属(逐条;DEC-004,签核 D-15)
+
+每条 case 的 `deterministic` 子对象按**判据分层**记录:
+
+| 字段 | 含义 |
+|---|---|
+| `hard_passed` | **硬层**(`must_refuse` / `answer_not_contains` / 空回答)是否全过 —— 判分器**不可翻案** |
+| `soft_missed` | **软层**(`answer_contains`)是否有未命中 —— 由判分器定夺 |
+| `passed` | 字面全过 = `hard_passed ∧ ¬soft_missed`(**既有语义,未改**) |
+| `hits` | 报告文案(硬层失败原因 + 软层未命中提示) |
+
+**合并规则**:`verdict = pass ⟺ hard_passed ∧ judge 判 pass`。
+`judge` 不可用时(直接调用 `_grade_case` 且 `judge=None` 的离线精简路径),确定性层为
+**唯一**判据(**含软层**)。
+
+**两个观测计数**(进 `summary`,**只观测、不参与阈值**):
+
+| 字段 | 含义 |
+|---|---|
+| `soft_miss_judge_pass` | 软层未命中、判分器救回 —— 量化"确定性层错了几次" |
+| `rule_hit_judge_fail` | 软层命中、判分器判 fail —— 关键词堆砌或判分器误判(>0 时打 warn 日志) |
 
 ## exit code 语义(CI 门)
 | code | 含义 | CI 处置 |
