@@ -183,3 +183,59 @@ def test_cli_calibrate_rejects_malformed_refs(tmp_path, capsys):
     rc = cli.main(["calibrate", "--refs", str(p)])
     assert rc != 0
     assert "ref_id" in capsys.readouterr().err or "a" in capsys.readouterr().err
+
+
+def test_case_issue_is_excluded_and_counted_separately_from_unsure():
+    """「用例本身有问题」与「人说不清」是**两回事** —— 前者是在说**用例的毛病**,
+    后者是在说**标注人的困难**。混在一个计数里,就会丢掉那条反馈。
+    """
+    out = compute_agreement([_item("a", True, "pass"),
+                             {"ref_id": "b", "human": "case_issue", "judge_verdict": "fail"},
+                             _item("c", "unsure", "flag"),
+                             _item("d", False, "fail")])
+    assert out["n_case_issue"] == 1
+    assert out["n_unsure"] == 1
+    assert out["n_labeled"] == 2
+    assert out["agreement"] == 1.0
+    # 被剔除的条 id 要报出来,否则"剔了谁"无从复核
+    assert out["excluded_ids"] == ["b", "c"]
+
+
+# ── 阈值接线(M1:让真值有地方落;但**不**顺手变成阻断项)──────────
+from eval_gate.runner import default_thresholds, load_thresholds  # noqa: E402
+
+
+def _thr_file(tmp_path, doc):
+    p = tmp_path / "阈值.json"
+    p.write_text(_json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    return p
+
+
+def test_judge_agreement_threshold_is_recorded_at_top_level(tmp_path):
+    """M1 判据:真值要落在**顶层**(= 被 runner 真正读到的位置),不能还躺在 `_doc_only`。"""
+    p = _thr_file(tmp_path, {"l2_task_completion": {"min": 0.8}, "redteam_zero": True,
+                             "judge_human_agreement": {"min": 0.8},
+                             "_doc_only": {"_note": "x"}})
+    thr = load_thresholds(p)
+    assert thr is not None and thr["judge_human_agreement"] == {"min": 0.8}
+    assert "_doc_only" not in thr, "`_` 前缀的注释块不得混进运行阈值"
+
+
+def test_malformed_judge_agreement_falls_back_stricter_not_wider(tmp_path, capsys):
+    """写坏了要**回落更严兜底**,不得静默忽略 —— 与其它阈值的纪律一致。"""
+    p = _thr_file(tmp_path, {"judge_human_agreement": {"min": "很高"}, "redteam_zero": True})
+    assert load_thresholds(p) is None
+    assert "形状不合法" in capsys.readouterr().err
+
+
+def test_judge_agreement_does_not_block_yet(tmp_path):
+    """⚠️ **守未决项**:一致率目前**不是阻断项**(DEC-008 §5 待签核)。
+
+    若哪天它开始阻断,这条会变红 —— 那时应该先有 DEC,而不是悄悄生效。
+    """
+    p = _thr_file(tmp_path, {"l2_task_completion": {"min": 0.8}, "redteam_zero": True,
+                             "judge_human_agreement": {"min": 0.99}})
+    thr = default_thresholds(p)
+    assert thr["l2_task_completion"]["min"] == 0.8
+    assert thr["judge_human_agreement"]["min"] == 0.99   # 值被读到(记录在案)
+    assert set(thr) - {"l2_task_completion", "redteam_zero", "judge_human_agreement"} == set()
