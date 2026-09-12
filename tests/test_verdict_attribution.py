@@ -78,34 +78,38 @@ def test_report_records_both_layers_separately(swap):
         pytest.fail("本轮没有走 judge 的条目,用例失去意义")
 
 
-def test_rule_fail_but_judge_pass_is_counted_as_disagreement(swap):
-    """**确定性层判 fail 而 judge 判 pass** = 两套判据打架 → 必须计数。
+def test_soft_miss_rescued_by_judge_is_counted(swap):
+    """**软层未命中、judge 救回** → 计数。
 
-    这个形状恰恰是"期望候选漏了一种措辞"(测到语义对、但字面没命中)的信号 ——
-    2026-09-12 那次归因错误,若当时有这个计数就会立刻看见。
+    这是本决策(DEC-004 方案 ④)的**作用面**:量化"确定性层错了几次",
+    是长期盯判据质量的口径(DEC-004 §3)。
     """
     swap(answer="完全不含期望要点的答案")
     res = _run(StubJudge("pass"))
-    assert res.summary["rule_judge_disagreements"] > 0
+    assert res.summary["soft_miss_judge_pass"] > 0
 
 
-def test_agreement_is_zero_when_layers_agree(swap):
-    """两套判据一致时,计数必须为 0(否则这个指标没有意义)。"""
-    ev = load_evals(EVALS)
-    # 让被测返回**所有期望要点都不命中**的答案,而 judge 也判 fail → 两者一致
+def test_zero_when_soft_layer_and_judge_both_miss(swap):
+    """软层未命中且 judge 也判 fail → 两者一致,**不计入救回**(否则指标没意义)。"""
     swap(answer="完全不含期望要点的答案")
     res = _run(StubJudge("fail"))
-    assert res.summary["rule_judge_disagreements"] == 0
+    assert res.summary["soft_miss_judge_pass"] == 0
 
 
-def test_disagreement_is_announced_not_silent(swap):
-    """不一致必须**出声**(结构化日志告警)—— 静默的不一致 = 没人会去看。"""
-    swap(answer="完全不含期望要点的答案")
+def test_rule_hit_but_judge_fail_is_counted(swap):
+    """字面命中、judge 不认(关键词堆砌 / judge 误判)→ 计数,值得人看。"""
+    swap(answer="1991 PostgreSQL 图 向量数据库")
+    res = _run(StubJudge("fail"))
+    assert res.summary["rule_hit_judge_fail"] > 0
+
+
+def test_rule_hit_judge_fail_is_announced_not_silent(swap):
+    """打架必须**出声**(结构化日志告警)—— 静默的不一致 = 没人会去看。"""
+    swap(answer="1991 PostgreSQL 图 向量数据库")
     stream = io.StringIO()
     ev = load_evals(EVALS)
-    res = evaluate(ev, judge=StubJudge("pass"), thresholds=default_thresholds(),
-                   tracer=Tracer(enabled=True, log_stream=stream))
-    assert res.summary["rule_judge_disagreements"] > 0
+    evaluate(ev, judge=StubJudge("fail"), thresholds=default_thresholds(),
+             tracer=Tracer(enabled=True, log_stream=stream))
     logs = stream.getvalue()
     assert "disagree" in logs or "不一致" in logs, "告警未出现在结构化日志里"
 
@@ -127,13 +131,21 @@ def test_cli_summary_states_who_blocked_each_failing_case(tmp_path, capsys, swap
     assert rc != 0
 
 
-def test_disagreement_does_not_change_verdict(swap):
-    """**只观测、不改判定**:计数出现，但 exit 语义仍由既有规则决定。
+def test_counters_do_not_change_verdict(swap):
+    """**计数只观测、不改判定** —— 加观测不得顺手放松/收紧门。
 
-    这是硬约束 —— 加观测不能顺手把门放松或收紧。
+    口径:同一个 case,判分器从 fail 改判 pass,`soft_miss_judge_pass` 必须变化,
+    而**阈值判定所读的字段**(`redteam_hits`)不得因此被"顺手"改动。
+
+    ⚠️ 不要在这里断言 exit code:mini 集两条 `deterministic_only` 用例(红队/注入)
+    在两种判分下都必然突破 ⇒ `redteam_zero` 阻断 ⇒ **两种情况下 exit 都是 1**。
+    合成一个"exit 应随 judge 变化"的期望 = 造一个假断言。
     """
     swap(answer="完全不含期望要点的答案")
-    res_fail = _run(StubJudge("fail"))
+    a = _run(StubJudge("fail"))
     swap(answer="完全不含期望要点的答案")
-    res_pass = _run(StubJudge("pass"))
-    assert res_fail.exit_code == res_pass.exit_code, "judge 的判定不应改变本用例的 exit 语义"
+    b = _run(StubJudge("pass"))
+    assert a.summary["soft_miss_judge_pass"] == 0
+    assert b.summary["soft_miss_judge_pass"] > 0, "判分器改判后计数必须变化"
+    assert a.summary["redteam_hits"] == b.summary["redteam_hits"], \
+        "计数不得影响红队统计(红队路径与判分器无关)"
