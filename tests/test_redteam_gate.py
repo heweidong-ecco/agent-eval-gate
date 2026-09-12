@@ -145,3 +145,82 @@ def test_sut_output_sanitizes_unencodable_text():
     out = SutOutput(answer="\ud800 x", sources=["\udfff"])
     out.answer.encode("utf-8")
     out.sources[0].encode("utf-8")
+
+
+# ── 靶子⑤(DEC-004 新增风险):语义权威交给判分器之后,门靠什么拦 ──────────
+# 背景:DEC-004(签核 D-15)把 `answer_contains` 的语义权威从确定性层**移交判分器**。
+# 于是 27/40 条 happy-path 在"软层未命中"时,**唯一拦截者就是判分器**。
+# 本组把这个新格局钉住:① 诚实判分器下门仍拦得住;② 判分器被骗时的边界**显式存在**。
+
+GOLDEN = Path(__file__).resolve().parents[1] / "eval" / "fastapi_rag_golden.evals.json"
+
+# 措辞像样、带规范的引用格式,但**答非所问**(没回答该条问的要点)。
+_PLAUSIBLE_BUT_WRONG = (
+    "根据现有资料,Python 是一门广泛使用的编程语言[来源:1],"
+    "在 Web 开发与自动化脚本等方向都有应用[来源:2]。"
+)
+
+
+class _AlwaysPassJudge:
+    """模拟**被骗过**的判分器:对任何输入一律判 pass。"""
+
+    def __init__(self):
+        self.usage = None
+
+    def enabled(self):
+        return False
+
+    def label(self):
+        return "always-pass"
+
+    def grade(self, item):
+        from eval_gate.judge import JudgeVerdict
+        return JudgeVerdict("pass", 1.0, ["被措辞骗过"])
+
+
+@pytest.fixture
+def swap_golden_sut(monkeypatch):
+    """把 golden 集的被测(fastapi-rag)替换成固定答案的桩。"""
+    def _swap(answer):
+        monkeypatch.setitem(ad.REGISTRY, "fastapi-rag", lambda **_: StubAdapter(answer=answer))
+    return _swap
+
+
+def test_plausible_but_wrong_answer_is_still_blocked_by_an_honest_judge(swap_golden_sut):
+    """**门的兜底还在**:软层未命中时,诚实的判分器必须把它拦下。
+
+    这条是"④ 之后门没被掏空"的守卫 —— 若它变红,说明门在 happy-path 上
+    彻底失去了拦截力,而不只是"换了个权威"。
+
+    ⚠️ **断言必须精确到具体条目**:集合里 10 条拒答 + 3 条红队**本来就是硬失败**,
+    用"有没有条目被拦"这种松断言,即使 happy-path 拦截力整个坏掉也照样是绿的 ——
+    那就成了"因错误的原因通过"(本仓已踩过两次,见 docs/复盘/2026-09-12-验证不足与工具选错.md E1)。
+    """
+    swap_golden_sut(_PLAUSIBLE_BUT_WRONG)
+    ev = load_evals(GOLDEN)
+    res = evaluate(ev, judge=FakeJudge(), thresholds=default_thresholds())
+    target = next(c for c in res.cases if c["id"] == 16)   # golden 里的 happy-path 条目
+    assert target["deterministic"]["soft_missed"] is True, "该答案不该命中该条期望(前提不成立)"
+    assert target["deterministic"]["hard_passed"] is True, "它不是硬层问题"
+    assert target["judge_used"] is True
+    assert target["judge_verdict"] != "pass", "诚实判分器不该被措辞骗过"
+    assert target["verdict"] == "fail", "软层未命中 + 判分器不认 → 必须 fail"
+
+
+def test_fooled_judge_will_let_a_plausible_wrong_answer_through(swap_golden_sut):
+    """⚠️ **已知边界(签核时认下的代价,不是 bug)**:
+
+    DEC-004 之后,`answer_contains` 的语义权威在判分器。若判分器被"措辞像样"骗过,
+    **门就会放行** —— 确定性层**不再兜底**。
+
+    本测试**故意钉住这个边界**:它哪天变红,意味着有人在 happy-path 上重新加了
+    确定性兜底 —— 那是**契约变更**,需要重新签核,不是"顺手修好了"。
+
+    缓解(不消除):① `summary.soft_miss_judge_pass` 长期观测"确定性层错了几次";
+    ② 判分器校准 = T1b(当前 `judge_human_agreement` 仍是 `_doc_only`,业务方已定夺近期不投入标注)。
+    """
+    swap_golden_sut(_PLAUSIBLE_BUT_WRONG)
+    ev = load_evals(GOLDEN)
+    res = evaluate(ev, judge=_AlwaysPassJudge(), thresholds=default_thresholds())
+    assert res.summary["passed"] > 0, "边界已变:判分器被骗时门本应放行(见 docstring)"
+    assert res.summary["soft_miss_judge_pass"] > 0, "应计入『软层未命中、判分器救回』"
