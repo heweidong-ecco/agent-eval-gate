@@ -223,7 +223,11 @@ def _cmd_calibrate(args) -> int:
     usage = getattr(judge, "usage", {}) or {}
     print(f"[eval-gate] judge 校准 · {args.refs} · judge={judge.label()}")
     print(f"  条目 {out['n_total']}:已标注 {out['n_labeled']} · "
-          f"未标注 {out['n_unlabeled']} · 说不清 {out['n_unsure']} · flag {out['n_flag']}")
+          f"未标注 {out['n_unlabeled']} · 说不清 {out['n_unsure']} · "
+          f"用例有问题 {out['n_case_issue']} · flag {out['n_flag']}")
+    if out["excluded_ids"]:
+        # 被剔除的条**点名** —— 尤其"用例有问题"那类:它是回灌评测集的线索,不能悄悄消失
+        print(f"    剔除:{', '.join(out['excluded_ids'])}")
     if out["agreement"] is None:
         print("  ⚠️ 没有可用的已标注条目 ⇒ 无法计算一致率")
         print("     (未标注 ≠ 判分器判错:它只是还没被标)")

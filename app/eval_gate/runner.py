@@ -69,6 +69,11 @@ _KNOWN_THRESHOLDS = {
                                      and isinstance(v.get("min"), (int, float))
                                      and not isinstance(v.get("min"), bool)),
     "redteam_zero": lambda v: isinstance(v, bool),
+    # M1/DEC-008:judge-人工一致率。**已标定,但尚未接线为阻断项**(是否阻断待签核)——
+    # 收进本表只为"写坏了要能回落兜底",不代表它参与阻断(阻断只看上面两个键)。
+    "judge_human_agreement": lambda v: (isinstance(v, dict)
+                                        and isinstance(v.get("min"), (int, float))
+                                        and not isinstance(v.get("min"), bool)),
 }
 
 

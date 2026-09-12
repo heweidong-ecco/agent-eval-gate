@@ -19,10 +19,17 @@ from __future__ import annotations
 
 # 「说不清」的合法写法(中英)。标注表里允许人写中文。
 _UNSURE = {"unsure", "uncertain", "说不清", "不确定", "拿不准"}
+# 「用例本身有问题」= **第三种剔除理由**,与「说不清」**不能并成一类**:
+# 前者在说**用例的毛病**(要回灌到评测集),后者在说**标注人的困难**。
+_CASE_ISSUE = {"case_issue", "用例问题", "用例本身有问题"}
 
 
 def _is_unsure(value) -> bool:
     return isinstance(value, str) and value.strip().lower() in _UNSURE
+
+
+def _is_case_issue(value) -> bool:
+    return isinstance(value, str) and value.strip().lower() in _CASE_ISSUE
 
 
 def compute_agreement(items: list[dict]) -> dict:
@@ -32,18 +39,24 @@ def compute_agreement(items: list[dict]) -> dict:
     返回各项计数与两个一致率;一条都没标 ⇒ 一致率为 `None`(**不是 0.0** ——
     0.0 会被读成"判分器全错")。
     """
-    n_labeled = n_agree = n_unlabeled = n_unsure = 0
+    n_labeled = n_agree = n_unlabeled = n_unsure = n_case_issue = 0
     n_flag = n_false_neg = n_false_pos = 0        # 误杀 / 漏放
     n_excl = n_excl_agree = 0
     detail: list[dict] = []
+    excluded_ids: list[str] = []
 
     for it in items:
         human = it.get("human")
         if human is None:
             n_unlabeled += 1
             continue
+        if _is_case_issue(human):
+            n_case_issue += 1
+            excluded_ids.append(it.get("ref_id"))
+            continue
         if _is_unsure(human):
             n_unsure += 1
+            excluded_ids.append(it.get("ref_id"))
             continue
 
         verdict = it.get("judge_verdict")
@@ -71,6 +84,8 @@ def compute_agreement(items: list[dict]) -> dict:
         "n_labeled": n_labeled,
         "n_unlabeled": n_unlabeled,
         "n_unsure": n_unsure,
+        "n_case_issue": n_case_issue,
+        "excluded_ids": excluded_ids,
         "n_agree": n_agree,
         "agreement": (n_agree / n_labeled) if n_labeled else None,
         "n_flag": n_flag,
