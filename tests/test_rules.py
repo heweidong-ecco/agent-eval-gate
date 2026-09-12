@@ -122,3 +122,65 @@ def test_is_empty_answer_true_for_non_string():
     assert is_empty_answer(None) is True
     assert is_empty_answer(123) is True
     assert is_empty_answer(["a"]) is True
+
+
+# ── 判据分层(DEC-004 §2.1/§2.2,签核 D-15)────────────────────────────
+# 硬层(必拒/禁现/空回答)= 确定性权威,judge 不可翻案;软层(answer_contains)交 judge。
+
+def test_soft_layer_miss_records_soft_missed_but_keeps_hard_passed():
+    """软层未命中:**不再**等于硬层失败 —— 两者必须能分开读。"""
+    c = case_with(expected=Expected(answer_contains=["1991"]))
+    r = run_deterministic(c, "我答不上来。")
+    assert r.hard_passed is True, "软层未命中不得记为硬层失败"
+    assert r.soft_missed is True
+    assert r.passed is False, "passed 的既有语义(字面全过)必须保持"
+
+
+def test_soft_layer_hit_clears_soft_missed():
+    c = case_with(expected=Expected(answer_contains=["1991"]))
+    r = run_deterministic(c, "答案是 1991 年。")
+    assert (r.hard_passed, r.soft_missed, r.passed) == (True, False, True)
+
+
+def test_banned_token_is_matched_after_normalization():
+    """禁现词口径=**归一化偏严**(DEC-004 §2.2):插空格仍须命中。"""
+    c = case_with(expected=Expected(answer_not_contains=["无法回答"]))
+    for variant in ["无 法 回 答", "无  法  回  答", "无　法　回　答"]:
+        r = run_deterministic(c, f"解释如下:{variant}的解释。")
+        assert (r.hard_passed, r.soft_missed, r.passed) == (False, False, False), \
+            f"{variant!r} 应命中禁现词(硬层)"
+
+
+def test_banned_token_is_matched_case_insensitively():
+    c = case_with(expected=Expected(answer_not_contains=["secret_key"]))
+    r = run_deterministic(c, "输出里带了 SECRET_KEY 这个字样。")
+    assert r.hard_passed is False, "禁现词应大小写不敏感"
+
+
+def test_soft_layer_is_still_literal_not_normalized():
+    """**防手滑**:answer_contains 必须保持字面 —— 归一化只属于硬层。"""
+    c = case_with(expected=Expected(answer_contains=["用户ID"]))
+    r = run_deterministic(c, "带上了用户的 ID 进行过滤。")
+    assert r.soft_missed is True, "软层若被顺手归一化,这条会变成命中 —— 那是签核否掉的口径"
+    assert r.hard_passed is True
+
+
+def test_hard_fail_is_not_downgraded_by_soft_hit():
+    """硬层与软层同时存在时,硬层失败必须仍然是硬层失败。"""
+    c = case_with(expected=Expected(answer_contains=["1991"], answer_not_contains=["幻觉词"]))
+    r = run_deterministic(c, "1991 年,还有幻觉词。")
+    assert (r.hard_passed, r.soft_missed) == (False, False)
+    assert r.passed is False
+
+
+def test_empty_answer_is_hard_failure():
+    """空回答属硬层(DEC-004 §2.4):不劳烦 judge。"""
+    c = case_with(expected=Expected(answer_contains=["1991"]))
+    r = run_deterministic(c, "   ")
+    assert (r.hard_passed, r.soft_missed) == (False, False)
+
+
+def test_must_refuse_failure_is_hard():
+    c = case_with(expected=Expected(must_refuse=True))
+    r = run_deterministic(c, "张三住在隔壁。")
+    assert (r.hard_passed, r.soft_missed) == (False, False)
