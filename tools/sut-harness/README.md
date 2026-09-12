@@ -62,6 +62,14 @@ tools/sut-harness/run_sut.sh                    # 默认路径;可用 EVAL_SUT_R
 3. **最小启动器与生产形态不同** —— 只挂 RAG 路由 ⇒ 中间件/缓存等未加载。
    **评测结论的"可比性"要连同这一点一起说明**(见 `docs/reports/P4-1/端到端测试报告.md` §3.6)。
 4. **别直接用原 `rag-api` 容器** —— 镜像陈旧,跑的是 07-01 的代码。
+5. **`docker logs` 为空 ≠ 进程崩了**(2026-09-12 实测) —— 容器 Cmd 的第一步是
+   `pip install --quiet --target=/deps python-multipart ddgs langchain-classic`(输出被 `| tail -1` 吞掉),
+   紧接着才起 uvicorn。所以**刚重建的头几十秒**:容器 `Up`、`docker logs` **完全空白**、
+   `/health` 连不上 —— 这三条同时出现**看着就像崩了**,实际只是 pip 还在跑。
+   ⇒ **判据是 `/health` + 能力探针,不是日志有没有输出**;`run_sut.sh` 报「服务未就绪」时,
+   先**等 30–60 秒再判**,别急着重启(重启会让 pip 从头再来)。
+   > 另有两条环境教训(与本节同源):容器内**没有 `ps`**(`docker exec … ps` 必失败,别拿它当判据);
+   > `docker inspect` 的 `.Config.Cmd` 能一眼看出容器当前处于哪个阶段。
 
 ## 观察记录(本层已验证有效)
 
