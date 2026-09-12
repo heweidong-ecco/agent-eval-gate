@@ -49,7 +49,11 @@ class JudgeConfig:
     base_url: str | None = None
     api_key: str | None = None
     model: str | None = None
-    max_tokens: int = 512
+    # ⚠️ 该值同时管住**推理开销**:推理型模型(如 deepseek-v4-*)的 `reasoning_tokens`
+    # 与 `content` 共用 `max_tokens`。512 档下难例的推理就把预算吃满 ⇒ `finish_reason='length'`
+    # ⇒ `content` 为空 ⇒ 解析必失败 ⇒ flag ⇒ exit 2(2026-09-12 实测,DEC-006)。
+    # 上限只是**天花板**:正常用例在 `finish_reason='stop'` 处自然结束,不涨消耗。
+    max_tokens: int = 4096
     concurrency: int = 4
     timeout_s: float = 60.0
     retries: int = 1
@@ -67,6 +71,6 @@ def judge_config() -> JudgeConfig:
         base_url=os.getenv("EVAL_JUDGE_BASE_URL") or None,
         api_key=os.getenv("EVAL_JUDGE_API_KEY") or None,
         model=os.getenv("EVAL_JUDGE_MODEL") or None,
-        max_tokens=_int_env("EVAL_JUDGE_MAX_TOKENS", 512),
+        max_tokens=_int_env("EVAL_JUDGE_MAX_TOKENS", 4096),
         concurrency=_int_env("EVAL_JUDGE_CONCURRENCY", 4),
     )

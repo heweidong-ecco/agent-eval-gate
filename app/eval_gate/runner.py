@@ -50,6 +50,9 @@ class RunResult:
     degraded: bool = False
     degraded_reason: str | None = None
     judge_usage: dict | None = None      # judge 成本(L1;契约 评测-judge.md:44)
+    # 生效 judge 配置(A4):产物里要能回答"这轮实际用的什么预算" —— 否则事后只能靠
+    # 读代码+推环境(2026-09-12 排查 T7 时正是如此)。无真 judge(离线替身)则为 None。
+    judge_config: dict | None = None
 
 
 THRESHOLD_FILE = ROOT / "eval" / "阈值.json"
@@ -200,6 +203,13 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
         else:
             if jsp is not None:
                 jsp.attributes["verdict"] = jv.verdict
+                # A3:把"这条走了几次、每次为什么结束"记进 trace —— 否则"被重试掩盖的失败"
+                # 只能靠 calls 与用例数对不上来间接发现(复盘 R4)。
+                d = getattr(judge, "last_diagnostics", None) or {}
+                if d:
+                    jsp.attributes["attempts"] = d.get("attempts")
+                    jsp.attributes["finish_reasons"] = ",".join(
+                        str(x) for x in d.get("finish_reasons") or [])
     res["judge_used"] = True
     # 判定归属:分开记录 judge **自己**的判定,便于事后分辨"这条是谁拦的"。
     # 动机(2026-09-12 实证):报告原先只存合并后的 verdict,导致连续两轮把
@@ -392,6 +402,8 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
 
     judge_label = active_judge.label() if active_judge else "offline"
     judge_usage = getattr(active_judge, "usage", None)
+    # A4:真 judge 才有效生配置;离线替身没有 ⇒ None(产物里宁缺勿假)
+    judge_config = getattr(active_judge, "effective_config", lambda: None)()
     if tracer is not None and rule_hit_judge_fail:
         # 静默的不一致 = 没人会去看。故这里**出声**,但不改判定(不进阈值、不阻断)。
         tracer.log("warn", "run", "judge_disagree",
@@ -412,4 +424,4 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
                      exit_code=exit_code, blockers=blockers,
                      applied_thresholds=thr, judge_label=judge_label,
                      degraded=degraded, degraded_reason=degraded_reason,
-                     judge_usage=judge_usage)
+                     judge_usage=judge_usage, judge_config=judge_config)

@@ -156,13 +156,18 @@ class _Resp:
 
 
 def test_success_path_returns_content_and_usage(monkeypatch):
-    """httpx 之外的**主路径**:成功响应须取出 content 与 usage(成本记账靠它)。"""
-    payload = {"choices": [{"message": {"content": '{"verdict":"pass","score":1}'}}],
+    """httpx 之外的**主路径**:成功响应须取出 content 与 usage(成本记账靠它)。
+
+    第三项 `finish_reason` 是 DEC-006 A2 的判据来源 —— 缺它则"被截断"与"模型不守格式"分不开。
+    """
+    payload = {"choices": [{"message": {"content": '{"verdict":"pass","score":1}'},
+                            "finish_reason": "stop"}],
                "usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}}
     monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: _Resp(payload))
-    content, usage = _openai_chat_http(_cfg(), [{"role": "user", "content": "x"}])
+    content, usage, finish = _openai_chat_http(_cfg(), [{"role": "user", "content": "x"}])
     assert content == '{"verdict":"pass","score":1}'
     assert usage["total_tokens"] == 10
+    assert finish == "stop"
 
 
 def test_grade_records_usage_through_real_http_path(monkeypatch):
@@ -173,7 +178,10 @@ def test_grade_records_usage_through_real_http_path(monkeypatch):
     j = Judge(_cfg())
     v = j.grade(build_item(1, "q", {"answer_contains": ["x"]}, "x"))
     assert v.verdict == "pass"
-    assert j.usage == {"calls": 1, "prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}
+    assert {k: j.usage[k] for k in ("calls", "prompt_tokens", "completion_tokens",
+                                    "total_tokens")} == {"calls": 1, "prompt_tokens": 7,
+                                                         "completion_tokens": 3, "total_tokens": 10}
+    assert j.usage["retries"] == 0 and j.usage["parse_flags"] == 0
 
 
 def test_timeout_is_retried_once_then_raised(monkeypatch):
