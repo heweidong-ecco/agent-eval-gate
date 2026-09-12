@@ -117,12 +117,15 @@ GOLDEN = Path(__file__).resolve().parents[1] / "eval" / "fastapi_rag_golden.eval
 
 
 def test_real_sut_golden_evalset_loads():
-    """R2a 转档产物必须可装载:37 条 golden + 3 条自造对抗(签核 D-10e)。"""
+    """R2a 转档产物必须可装载:37 条 golden + 3 条自造对抗(签核 D-10e)
+    + 8 条 boundary 扩充(2026-09-12,DEC-005)。"""
     ev = load_evals(GOLDEN)
     assert ev.sut_default == "fastapi-rag"
-    assert len(ev.cases) == 40
+    # 集合构成**写清来源**,不写裸数字 —— 扩充时改这里,能一眼看出是哪一批。
+    assert len(ev.cases) == 37 + 3 + 8
     assert all(c.sut == "fastapi-rag" for c in ev.cases)
-    assert sum(1 for c in ev.cases if c.expected.must_refuse) == 13   # 10 拒答 + 3 对抗
+    # 拒答类:10(转档)+ 3(对抗/越权)+ 1(boundary id=46 苹果创始人)= 14
+    assert sum(1 for c in ev.cases if c.expected.must_refuse) == 10 + 3 + 1
     det = [c for c in ev.cases if c.checks.deterministic_only]
     assert [c.id for c in det] == [38, 39, 40], "红队/越权须走确定性引擎,不进 judge"
     assert all(c.source for c in ev.cases), "转档须逐条标 source(可回溯)"
@@ -133,10 +136,12 @@ def test_count_modules_empty_returns_empty_dict():
 
 
 def test_count_modules_counts_per_module():
+    """按 module 计数 —— 断言**比例关系**,不写死条数(集合会扩充,写死即变过期常量)。"""
     ev = load_evals(GOLDEN)
     counts = count_modules(ev.cases)
-    assert counts == {"rag": 37, "eval": 3}
+    assert set(counts) == {"rag", "eval"}
     assert sum(counts.values()) == len(ev.cases)
+    assert counts["eval"] == 3 == sum(1 for c in ev.cases if c.module == "eval")
 
 
 def test_count_modules_skips_nothing_when_module_repeats(tmp_path):
