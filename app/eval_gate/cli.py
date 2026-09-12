@@ -11,11 +11,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import json
 import sys
 from pathlib import Path
 
+from eval_gate.calib import compute_agreement
 from eval_gate.config import judge_config
-from eval_gate.judge import FakeJudge, Judge
+from eval_gate.judge import FakeJudge, Judge, build_item
 from eval_gate.obs import STATUS_ERROR, Tracer, read_trace, render_tree
 from eval_gate.report import judge_accounting, write_run
 from eval_gate.runner import default_thresholds, evaluate
@@ -37,6 +39,10 @@ def _parser() -> argparse.ArgumentParser:
     t = sub.add_parser("trace", help="打印某次 run 的 Trace 视图(span 树)")
     t.add_argument("--run", help="run_id(默认取最近一次)")
     t.add_argument("--trace-dir", default="eval/runs", help="trace 文件目录(默认 eval/runs)")
+    c = sub.add_parser("calibrate", help="judge 校准:算 judge-人工一致率(M1/E7)")
+    c.add_argument("--refs", required=True, help="人工标注参照集 JSON(见 eval/judge_refs.json)")
+    c.add_argument("--offline", action="store_true", help="用离线 FakeJudge(不发真实模型请求)")
+    c.add_argument("--threshold", default="eval/阈值.json", help="阈值文件(取 judge_human_agreement.min)")
     return p
 
 
@@ -174,9 +180,95 @@ def _cmd_trace(args) -> int:
     return 0
 
 
+def _cmd_calibrate(args) -> int:
+    """算 judge-人工一致率(M1 / E7,`contracts/评测-judge.md:47`)。
+
+    这是门的结论的**外部锚**:在此之前"判分器判得准不准"只有门自己的说法。
+    """
+    try:
+        doc = json.loads(Path(args.refs).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        print(f"[eval-gate] 标注集不可读/不是合法 JSON: {e}", file=sys.stderr)
+        return 2
+    refs = doc.get("refs") if isinstance(doc, dict) else doc
+    if not isinstance(refs, list) or not refs:
+        print("[eval-gate] 标注集为空(期望 {\"refs\": [...]})", file=sys.stderr)
+        return 2
+    # 缺字段**报错**,不静默跳过 —— 静默跳过 = 偷偷改分母
+    for r in refs:
+        missing = [k for k in ("ref_id", "question", "expected", "sut_answer") if not r.get(k)]
+        if missing:
+            print(f"[eval-gate] 标注集条目缺字段:ref_id={r.get('ref_id')!r} 缺 {missing}",
+                  file=sys.stderr)
+            return 2
+
+    if args.offline:
+        judge: Judge = FakeJudge()
+        print("[eval-gate] 离线模式(FakeJudge):一致率**仅供链路自证**,不是真实判分器的一致性")
+    else:
+        cfg = judge_config()
+        judge = Judge(cfg) if cfg.enabled() else FakeJudge()
+        if not cfg.enabled():
+            print("[eval-gate] 未配置 EVAL_JUDGE_* → 退回 FakeJudge(结果仅供链路自证)")
+
+    items = []
+    for r in refs:
+        verdict = None
+        if r.get("human") is not None:
+            item = build_item(0, r["question"], r["expected"], r["sut_answer"])
+            verdict = judge.grade(item).verdict
+        items.append({"ref_id": r["ref_id"], "human": r.get("human"), "judge_verdict": verdict})
+
+    out = compute_agreement(items)
+    usage = getattr(judge, "usage", {}) or {}
+    print(f"[eval-gate] judge 校准 · {args.refs} · judge={judge.label()}")
+    print(f"  条目 {out['n_total']}:已标注 {out['n_labeled']} · "
+          f"未标注 {out['n_unlabeled']} · 说不清 {out['n_unsure']} · flag {out['n_flag']}")
+    if out["agreement"] is None:
+        print("  ⚠️ 没有可用的已标注条目 ⇒ 无法计算一致率")
+        print("     (未标注 ≠ 判分器判错:它只是还没被标)")
+    else:
+        print(f"  {out['agreement']:.2f}  (judge_human_agreement = 一致 {out['n_agree']}"
+              f" / 已标注 {out['n_labeled']})")
+        if out["agreement_excl_flag"] is not None:
+            print(f"  副指标(剔 flag 后):{out['agreement_excl_flag']:.2f}")
+        if out["n_false_negative"]:
+            bad = [d["ref_id"] for d in out["detail"] if not d["agree"] and d["human"]]
+            print(f"  ⚠️ 误杀 {out['n_false_negative']} 条(人判满足、判分器判不通过):{', '.join(bad)}")
+        if out["n_false_positive"]:
+            bad = [d["ref_id"] for d in out["detail"] if not d["agree"] and not d["human"]]
+            print(f"  ⚠️ 漏放 {out['n_false_positive']} 条(人判不满足、判分器却放行):{', '.join(bad)}")
+    mn = _judge_agreement_min(args.threshold)
+    if mn is not None:
+        print(f"  阈值 judge_human_agreement.min = {mn:.2f}"
+              + ("" if out["agreement"] is None
+                 else f" ⇒ {'达标 ✅' if out['agreement'] >= mn else '未达标 ❌'}"))
+    if usage.get("calls"):
+        print(f"  judge 调用 {usage['calls']} 次 · token {usage.get('total_tokens', 0)}")
+    return 0
+
+
+def _judge_agreement_min(path: str) -> float | None:
+    """读阈值里的 `judge_human_agreement.min`(同时认顶层与 `_doc_only` 下的写法)。"""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for src in (doc, doc.get("_doc_only") or {}):
+        try:
+            return float((src.get("judge_human_agreement") or {})["min"])
+        except (KeyError, TypeError, ValueError):
+            continue
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    return _cmd_trace(args) if args.cmd == "trace" else _cmd_run(args)
+    if args.cmd == "trace":
+        return _cmd_trace(args)
+    if args.cmd == "calibrate":
+        return _cmd_calibrate(args)
+    return _cmd_run(args)
 
 
 if __name__ == "__main__":
