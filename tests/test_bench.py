@@ -152,8 +152,11 @@ def test_driver_stubs_every_sut_in_the_evalset(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     cfg = json.loads(out.read_text(encoding="utf-8"))["measurements"]["configs"][0]
     assert cfg["span_attribution"]["sut.call"]["ms"] >= 0
-    # 跑了 40 条 case,且每条都产生了 sut.call span(未被重试拖长)
-    assert json.loads(out.read_text(encoding="utf-8"))["dataset"]["cases"] == 40
+    # 跑了**整个**集合,且每条都产生了 sut.call span(未被重试拖长)。
+    # 条数从评测集读,不写死(集合会扩充)。
+    n_cases = len(json.loads((root / "eval" / "fastapi_rag_golden.evals.json")
+                             .read_text(encoding="utf-8"))["evals"])
+    assert json.loads(out.read_text(encoding="utf-8"))["dataset"]["cases"] == n_cases
 
 
 def test_driver_rejects_bad_concurrency(tmp_path):

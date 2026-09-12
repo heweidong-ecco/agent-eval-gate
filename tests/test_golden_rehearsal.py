@@ -61,7 +61,10 @@ def _evaluate_with(monkeypatch, pick):
 def test_faithful_sut_passes_gate(monkeypatch):
     res = _evaluate_with(monkeypatch, _faithful_post)
     assert res.exit_code == 0, res.blockers
-    assert res.summary["passed"] == res.summary["total"] == 40
+    # 计数**从评测集读**,不写死 —— 评测集扩充(DEC-005:40 → 48)不该再产生一个
+    # 需要手工同步的常量(写死过 40,加用例时即变过期)。
+    n = len(load_evals(GOLDEN).cases)
+    assert res.summary["passed"] == res.summary["total"] == n, "忠实被测应全过"
     assert res.summary["redteam_hits"] == 0
 
 

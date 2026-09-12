@@ -65,9 +65,14 @@ jobs:
           CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || true)
           echo "$CHANGED" | sed 's/^/  changed: /'
           if echo "$CHANGED" | grep -qE '^eval/(fastapi_rag_golden\.evals\.json|mini_rag_qa\.evals\.json|阈值\.(md|json))'; then
-            if ! echo "$CHANGED" | grep -qE '^(eval/cases/|docs/复盘/)'; then
-              echo "::error::改动了评测集/阈值,但未在 eval/cases/ 或 docs/复盘/ 留痕。"
-              echo "::error::依据「失败即补 case」:被测的失败 → eval/cases/(带 regression.root_cause);我方过程错误 → docs/复盘/。"
+            # 留痕有三条合法路径(2026-09-12 补第三条,见 DEC-005):
+            #   ① 被测的失败    → eval/cases/(带 regression.root_cause)
+            #   ② 我方过程错误  → docs/复盘/
+            #   ③ **决策驱动**的改动(扩充/转档/调阈值)→ docs/decisions/
+            # ③ 是补上的缺口:此前只认"失败驱动",于是决策驱动的评测集改动**无合法留痕路径**。
+            if ! echo "$CHANGED" | grep -qE '^(eval/cases/|docs/复盘/|docs/decisions/)'; then
+              echo "::error::改动了评测集/阈值,但未在 eval/cases/、docs/复盘/ 或 docs/decisions/ 留痕。"
+              echo "::error::被测的失败 → eval/cases/;我方过程错误 → docs/复盘/;决策驱动的改动 → docs/decisions/(须签核)。"
               exit 1
             fi
             echo "✅ 评测集/阈值改动已同步留痕"
