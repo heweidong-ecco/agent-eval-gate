@@ -114,12 +114,16 @@ def test_rule_hit_judge_fail_is_announced_not_silent(swap):
     assert "disagree" in logs or "不一致" in logs, "告警未出现在结构化日志里"
 
 
-def test_cli_summary_states_who_blocked_each_failing_case(tmp_path, capsys, swap):
-    """CLI 摘要必须**当场说清"谁拦的"** —— 不让人从 verdict 反推。
+def test_cli_summary_names_the_layer_that_blocked(tmp_path, capsys, swap):
+    """CLI 摘要必须**当场说清"谁拦的"**,且措辞必须与**分层后的真实语义**一致。
 
-    这一条针对的是一个真实过程错误:2026-09-12 连续两轮把"确定性层拦下的"误读成
-    "判断器判错",而一手字段其实一直在报告里 —— 只是摘要里看不见,于是被跳过。
+    这一条针对一个真实过程错误:2026-09-12 连续两轮把"确定性层拦下的"误读成
+    "判分器判错",而一手字段其实一直在报告里 —— 只是摘要里看不见,于是被跳过。
     ⇒ 修法不是"再加字段",而是**把归属放到你一定会看到的地方**。
+
+    2026-09-12 二次修正(DEC-004 §3,签核 D-15):判据分层后「期望未命中」
+    **已不再拦截**(软层交判分器)⇒ 摘要里若还这么说,就是**假话**。故本题既断言
+    归属存在,也断言那句假话**不出现**。
     """
     from eval_gate import cli as cli_mod
     swap(answer="完全不含期望要点的答案")
@@ -127,7 +131,13 @@ def test_cli_summary_states_who_blocked_each_failing_case(tmp_path, capsys, swap
                        "--report-dir", str(tmp_path)])
     out = capsys.readouterr().out
     assert "判定归属" in out, "摘要未给出判定归属"
-    assert "确定性层拦下" in out
+    assert "期望未命中" not in out, "④ 之后『期望未命中』已不再拦截,这句话是假话"
+    assert "拦下" in out, "必须指名是谁拦的"
+    # 红队/注入条目**根本没走 judge**,不能打成"判定归属见报告(judge=None)" —— 那会把人带偏。
+    # ⚠️ 断言必须**精确到条目行**:`"红队/注入"` 这个子串在下面的 blocker 行
+    # (「redteam_zero 命中: 红队/注入被突破 2 条」)里也有,松断言会**因错误的原因通过**。
+    assert "硬层拦下(红队/注入" in out, "deterministic_only 条目必须单独指名(零容忍路径)"
+    assert "judge=None" not in out, "红队条目从不走 judge,不该出现 judge=None"
     assert rc != 0
 
 
