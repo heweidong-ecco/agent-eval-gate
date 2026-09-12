@@ -172,11 +172,15 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
                 rsp.status = STATUS_ERROR
     res: dict[str, Any] = {
         "id": case.id, "module": case.module, "deterministic_only": False,
-        "deterministic": {"passed": rule.passed, "hits": rule.hits},
+        "deterministic": {"passed": rule.passed, "hard_passed": rule.hard_passed,
+                          "soft_missed": rule.soft_missed, "hits": rule.hits},
         "answer": answer, "sources": sources,
     }
     if judge is None:
-        # 无 judge:以确定性结果为准(MVP 精简路径)
+        # 兜底(DEC-004 §2.4,签核 D-15):无 judge ⇒ 确定性层是**唯一**判据,**含软层**
+        # (rule.passed = hard_passed ∧ ¬soft_missed)—— 此值正是我们要的语义。
+        # ⚠️ 注意 `evaluate()` 里 judge=None 会被替换成 FakeJudge(),故此分支只在
+        # **直接调用** `_grade_case` 时可达(离线 MVP 精简路径)。
         res["judge_used"] = False
         res["verdict"] = "pass" if rule.passed else "fail"
         res["score"] = 1.0 if rule.passed else 0.0
@@ -201,8 +205,19 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
     # 动机(2026-09-12 实证):报告原先只存合并后的 verdict,导致连续两轮把
     # "确定性层拦下的"误归因成"judge 判错" —— 正确信息其实一直在一手字段里。
     res["judge_verdict"] = jv.verdict
-    res["verdict"] = "pass" if (rule.passed and jv.verdict == "pass") else ("flag" if jv.verdict == "flag" else "fail")
-    res["score"] = jv.score if rule.passed else 0.0
+    # 判据分层(DEC-004 §2.1,签核 D-15):
+    #   硬层(必拒/禁现/空回答)= 确定性权威,judge **不可翻案** ⇒ 硬层不过直接 fail;
+    #   软层(answer_contains)= judge 权威 ⇒ 未命中**不再单独构成 fail**;
+    #   软层命中仍须 judge pass(字面命中不构成翻案,防关键词堆砌被放行)。
+    if not rule.hard_passed:
+        res["verdict"] = "fail"
+    elif jv.verdict == "pass":
+        res["verdict"] = "pass"
+    elif jv.verdict == "flag":
+        res["verdict"] = "flag"
+    else:
+        res["verdict"] = "fail"
+    res["score"] = jv.score if res["verdict"] == "pass" else 0.0
     res["reasons"] = list(rule.hits) + list(jv.reasons)
     res["evidence_refs"] = list(jv.evidence_refs)
     res["labels"] = list(jv.labels)
