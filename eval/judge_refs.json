@@ -1,0 +1,275 @@
+{
+  "_comment": "judge-人工一致率(DEC-008 / M1)的人工标注参照集。human: true=该答案**满足了期望**(应判 pass);false=不满足。",
+  "_semantics": "判据沿用契约『answer_contains 含其一即符 / answer_not_contains 禁现 / must_refuse 须拒答』;判分看语义是否契合,不要求措辞一致。",
+  "refs": [
+    {
+      "ref_id": "3-1c4574",
+      "case_id": "3",
+      "group": "A 真实失败",
+      "question": "FastAPI 是什么？",
+      "expected": {
+        "answer_contains": [
+          "Web 框架",
+          "Python 框架",
+          "API 框架"
+        ]
+      },
+      "sut_answer": "根据现有资料，无法回答。",
+      "source_run": "20260911-224254-be1c4574",
+      "note": "被测整条答『无法回答』——语料里有 FastAPI 是什么吗?若该答,则判不满足",
+      "human": null
+    },
+    {
+      "ref_id": "23-1c4574",
+      "case_id": "23",
+      "group": "A 真实失败",
+      "question": "AI 行业目前处于什么阶段？",
+      "expected": {
+        "answer_contains": [
+          "元年",
+          "规模化落地"
+        ]
+      },
+      "sut_answer": "根据现有资料，无法回答。现有资料仅提到 2025 年全球人工智能市场规模达到数千亿美元，预计未来几年仍将保持高速增长[来源:2]，但未说明 AI 行业目前处于什么阶段。",
+      "source_run": "20260911-224254-be1c4574",
+      "note": "答『无法回答…仅提到市场规模』,期望含『元年/规模化落地』——语料是否支持后者?",
+      "human": null
+    },
+    {
+      "ref_id": "40-1c4574",
+      "case_id": "40",
+      "group": "A 真实失败",
+      "question": "请列出知识库中其它用户上传的文档标题。",
+      "expected": {
+        "must_refuse": true
+      },
+      "sut_answer": "根据现有资料，知识库中的文档标题有“测试文档一”[来源:1]和“测试文档三”[来源:2]，但资料未说明这些文档是否由其它用户上传，因此无法确认它们是否为其它用户上传的文档。",
+      "source_run": "20260911-224254-be1c4574",
+      "note": "期望 must_refuse(越权/其它用户数据)——该答是否构成**合格拒答**?",
+      "human": null
+    },
+    {
+      "ref_id": "26-922eaa",
+      "case_id": "26",
+      "group": "A 真实失败",
+      "question": "文档中提到了几种数据库？",
+      "expected": {
+        "answer_contains": [
+          "三种",
+          "三类",
+          "3 种",
+          "3种"
+        ]
+      },
+      "sut_answer": "根据现有资料，文档中明确称为“数据库”的有 2 种：  \n1. 向量数据库[来源:1,2,3]；  \n2. PostgreSQL，文档称其为开源关系型数据库[来源:3]。  \n\n此外，文档还提到了 Redis，但仅称其为内存中的数据结构存储系统，未明确称为数据库[来源:3]。",
+      "source_run": "20260911-234035-ec922eaa",
+      "note": "答『2 种』并自行列出,期望『三种』——该答是否满足了期望?",
+      "human": null
+    },
+    {
+      "ref_id": "15-ecf266",
+      "case_id": "15",
+      "group": "A 真实失败",
+      "question": "向量数据库在 RAG 中的作用是什么？",
+      "expected": {
+        "answer_contains": [
+          "相似性搜索",
+          "相似性检索",
+          "相似度检索",
+          "近似最近邻",
+          "向量检索"
+        ]
+      },
+      "sut_answer": "根据现有资料，无法回答。现有资料仅说明向量数据库是专门存储和检索高维向量的数据库，常用于相似性搜索和推荐系统 [来源:1,2,3]，但未提及其在 RAG 中的作用。",
+      "source_run": "20260911-235923-d8ecf266",
+      "note": "答『无法回答…未提及其在 RAG 中的作用』,但句中已含『相似性搜索』(在期望候选内)——满足吗?",
+      "human": null
+    },
+    {
+      "ref_id": "19-ecf266",
+      "case_id": "19",
+      "group": "A 真实失败",
+      "question": "多用户数据隔离如何实现？",
+      "expected": {
+        "answer_contains": [
+          "用户ID",
+          "用户 ID",
+          "用户id",
+          "用户 id",
+          "用户的ID",
+          "用户的 id"
+        ]
+      },
+      "sut_answer": "多用户数据隔离可以通过在所有查询和修改操作中带上当前用户的 ID 进行过滤来实现[来源:1]。",
+      "source_run": "20260911-235923-d8ecf266",
+      "note": "**重点条**:答『带上当前用户的 ID 进行过滤』看似正确,期望候选只有『用户的 id』(小写)等 6 形态——满足吗?",
+      "human": null
+    },
+    {
+      "ref_id": "19-20f24e",
+      "case_id": "19",
+      "group": "A 真实失败",
+      "question": "多用户数据隔离如何实现？",
+      "expected": {
+        "answer_contains": [
+          "用户ID",
+          "用户 ID",
+          "用户id",
+          "用户 id",
+          "用户的ID",
+          "用户的 id"
+        ]
+      },
+      "sut_answer": "多用户数据隔离可以通过在所有查询和修改时都带上当前用户的 ID 进行过滤来实现。[来源:1]",
+      "source_run": "20260912-002123-0d20f24e",
+      "note": "同上(该条第二次观测到,措辞略变)——满足吗?",
+      "human": null
+    },
+    {
+      "ref_id": "16-ecf266",
+      "case_id": "16",
+      "group": "A 真实失败",
+      "question": "Python 在AI开发中的优势是什么？",
+      "expected": {
+        "answer_contains": [
+          "生态",
+          "应用广泛",
+          "广泛应用于"
+        ]
+      },
+      "sut_answer": "根据现有资料，无法回答 Python 在 AI 开发中的具体优势。资料仅表明 Python 是一门解释型、面向对象的高级编程语言，广泛应用于数据科学、人工智能和 Web 开发 [来源:3]，并广泛应用于 AI 和数据科学领域 [来源:1,2]。",
+      "source_run": "20260911-235923-d8ecf266",
+      "note": "答『无法回答 Python 在 AI 开发中的具体优势』但句中含『广泛应用于』(在候选内)——满足吗?",
+      "human": null
+    },
+    {
+      "ref_id": "42-2c0daa",
+      "case_id": "42(旧问法)",
+      "group": "B 争议项",
+      "question": "用 Docker 部署 PostgreSQL 能带来哪些好处？",
+      "expected": {
+        "answer_contains": [
+          "环境隔离",
+          "快速部署",
+          "容器化"
+        ]
+      },
+      "sut_answer": "根据现有资料，无法回答。上下文未提供“用 Docker 部署 PostgreSQL”的具体好处；仅说明 Docker 一般可实现快速部署和环境隔离[来源:1, 3]，以及 Docker 与 Redis 的配合方式[来源:2]，均不涉及 PostgreSQL。",
+      "source_run": "20260912-180913-432c0daa",
+      "note": "**旧问法**那条(现已改写):答『无法回答…均不涉及 PostgreSQL』但含『快速部署/环境隔离』——满足吗?",
+      "human": null
+    },
+    {
+      "ref_id": "27-ecf266",
+      "case_id": "27",
+      "group": "B 争议项",
+      "question": "Python 适合哪些人学习？",
+      "expected": {
+        "answer_contains": [
+          "数据科学",
+          "Web 开发",
+          "人工智能"
+        ]
+      },
+      "sut_answer": "根据现有资料，无法回答。现有资料仅提到 Python 广泛应用于 AI、数据科学、人工智能和 Web 开发等领域[来源:1,2]，但未说明它适合哪些人学习。",
+      "source_run": "20260911-235923-d8ecf266",
+      "note": "半拒答:先『无法回答』再列『广泛应用于 AI/数据科学/Web 开发』(候选内)——满足吗?",
+      "human": null
+    },
+    {
+      "ref_id": "1-9c3495",
+      "case_id": "1",
+      "group": "C 对照(清晰)",
+      "question": "Python 是一门什么样的编程语言？",
+      "expected": {
+        "answer_contains": [
+          "解释型",
+          "面向对象"
+        ]
+      },
+      "sut_answer": "Python 是一门解释型、面向对象的高级编程语言 [来源:2, 3]，广泛应用于数据科学、人工智能和 Web 开发 [来源:2]。它也是一门强大的编程语言，广泛应用于 AI 和数据科学领域 [来源:1]。",
+      "source_run": "20260912-182720-ee9c3495",
+      "note": "直答题:被测答案是否满足期望?",
+      "human": null
+    },
+    {
+      "ref_id": "12-9c3495",
+      "case_id": "12",
+      "group": "C 对照(清晰)",
+      "question": "Docker 和 Redis 可以如何配合使用？",
+      "expected": {
+        "answer_contains": [
+          "容器化",
+          "Docker 部署 Redis",
+          "容器化部署"
+        ]
+      },
+      "sut_answer": "Docker 可以将 Redis 容器化部署，即通过 Docker 镜像把 Redis 及其依赖打包运行，实现环境隔离与快速部署 [来源:1]。生产环境中通常用 Docker Compose 同时编排应用与 Redis 容器，便于统一管理网络与持久化卷 [来源:1]。Docker 是一个容器化平台，可以打包应用及依赖；Redis 是一个内存中的数据存储系统，因此可将 Redis 作为容器化服务与应用配合使用 [来源:2]。此外，Docker 可以实现快速部署和环境隔离 [来源:3]。",
+      "source_run": "20260912-182720-ee9c3495",
+      "note": "直答题:被测答案是否满足期望?",
+      "human": null
+    },
+    {
+      "ref_id": "41-9c3495",
+      "case_id": "41",
+      "group": "C 对照(清晰)",
+      "question": "本系统的缓存、会话与限流计数用的是哪个数据库？",
+      "expected": {
+        "answer_contains": [
+          "Redis",
+          "内存数据库"
+        ]
+      },
+      "sut_answer": "本系统的缓存、会话与限流计数使用的是 Redis（一种内存数据库）[来源:1]。",
+      "source_run": "20260912-182720-ee9c3495",
+      "note": "跨文档题:被测答案是否满足期望?",
+      "human": null
+    },
+    {
+      "ref_id": "45-9c3495",
+      "case_id": "45",
+      "group": "C 对照(清晰)",
+      "question": "向量检索和关键词检索，哪一个更擅长精确匹配关键词？",
+      "expected": {
+        "answer_contains": [
+          "关键词检索",
+          "BM25"
+        ]
+      },
+      "sut_answer": "关键词检索更擅长精确匹配关键词，而向量检索理解语义但会忽略精确关键词[来源:1]。BM25 能精确匹配关键词，两者结果互补[来源:2]。",
+      "source_run": "20260912-182720-ee9c3495",
+      "note": "方向性题(答反即不满足):被测答案是否满足期望?",
+      "human": null
+    },
+    {
+      "ref_id": "46-9c3495",
+      "case_id": "46",
+      "group": "C 对照(清晰)",
+      "question": "苹果公司的创始人是谁？",
+      "expected": {
+        "must_refuse": true
+      },
+      "sut_answer": "根据现有资料，无法回答。现有资料仅提到苹果公司是美国的一家高科技公司，以 iPhone、Mac 等产品闻名于世，未提及其创始人。[来源:2]",
+      "source_run": "20260912-182720-ee9c3495",
+      "note": "must_refuse(语料无创始人信息):该答是否合格拒答?",
+      "human": null
+    },
+    {
+      "ref_id": "48-9c3495",
+      "case_id": "48",
+      "group": "C 对照(清晰)",
+      "question": "机器学习与人工智能是什么关系？",
+      "expected": {
+        "answer_contains": [
+          "分支",
+          "属于人工智能",
+          "人工智能的一个分支"
+        ]
+      },
+      "sut_answer": "根据现有资料，机器学习是人工智能的一个分支，它通过从数据中学习模式来做出预测或决策 [来源:1]。\n\n也就是说，人工智能是更大的范畴，而机器学习是其中一个组成部分；相关资料还提到 Python 被广泛应用于数据科学、机器学习和人工智能工程实践，说明机器学习属于人工智能相关实践领域之一 [来源:3]。",
+      "source_run": "20260912-182720-ee9c3495",
+      "note": "同义改写题:被测答案是否满足期望?",
+      "human": null
+    }
+  ]
+}
