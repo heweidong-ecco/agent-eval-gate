@@ -17,7 +17,7 @@ from pathlib import Path
 from eval_gate.config import judge_config
 from eval_gate.judge import FakeJudge, Judge
 from eval_gate.obs import STATUS_ERROR, Tracer, read_trace, render_tree
-from eval_gate.report import write_run
+from eval_gate.report import judge_accounting, write_run
 from eval_gate.runner import default_thresholds, evaluate
 from eval_gate.schema import EvalError, load_evals
 
@@ -90,7 +90,18 @@ def _cmd_run(args) -> int:
 
         s = result.summary
         print(f"[eval-gate] run={result.run_id} judge={judge.label()} quality={quality}")
+        # DEC-006 A4:生效预算打印出来 —— 判分器的"输出预算"直接决定它能不能给出合法 JSON,
+        # 而推理型模型的 reasoning 与 content **共用**该上限(2026-09-12 实测踩到)。
+        jc = getattr(judge, "effective_config", lambda: None)()
+        if jc:
+            print(f"  生效 judge 配置: model={jc.get('model')} · max_tokens={jc.get('max_tokens')}"
+                  f" · retries={jc.get('retries')} · timeout={jc.get('timeout_s')}s")
         print(f"  通过 {s['passed']}/{s['total']} · 失败 {s['failed']} · 存疑 {s['flag']} · 跳过 {s['skipped']} · 红队突破 {s['redteam_hits']} · 达标率 {s['completion']:.2f}")
+        # DEC-006 A3:"calls 比用例多出来的那几次"是**被重试掩盖的失败** —— 不打印就没人会发现。
+        accounting = judge_accounting(result.judge_usage,
+                                      sum(1 for c in result.cases if c.get("judge_used")))
+        if accounting:
+            print(f"  {accounting}")
         if result.degraded:
             print(f"  ⚠ DEGRADED(整批 aborted,不算全绿): {result.degraded_reason}")
         # 判定归属:未通过条目**当场说清是谁拦的**,不让人从 verdict 反推。

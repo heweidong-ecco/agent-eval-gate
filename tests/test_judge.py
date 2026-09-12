@@ -145,8 +145,12 @@ def test_usage_accumulates_from_tuple_chat():
     j = Judge(JudgeConfig(), chat=chat)
     j.grade(ITEM)
     j.grade(ITEM)
-    assert j.usage == {"calls": 2, "prompt_tokens": 200,
-                       "completion_tokens": 40, "total_tokens": 240}
+    # 成本口径(calls / prompt / completion / total)+ 诊断计数(DEC-006 A3)。
+    assert {k: j.usage[k] for k in ("calls", "prompt_tokens", "completion_tokens",
+                                    "total_tokens")} == {"calls": 2, "prompt_tokens": 200,
+                                                         "completion_tokens": 40, "total_tokens": 240}
+    assert (j.usage["retries"], j.usage["truncated"],
+            j.usage["parse_failures"], j.usage["parse_flags"]) == (0, 0, 0, 0)
 
 
 def test_usage_from_http_response():

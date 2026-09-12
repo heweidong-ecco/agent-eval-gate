@@ -15,6 +15,31 @@ from dataclasses import dataclass, field
 from eval_gate.config import JudgeConfig, judge_config
 
 VERDICTS = {"pass", "fail", "flag"}
+# 截断重试时放大预算的**封顶**(DEC-006 A2):推理型模型的 reasoning 与 content 共用
+# `max_tokens`,截断 ⇒ 重试必须给更大预算;封顶防一次截断把成本上限顶穿。
+MAX_TOKENS_CEILING = 8192
+
+# 重试提示语**按根因分流** —— 旧版只有一句"上次不是合法 JSON",对"被截断"是误导:
+# 截断时模型根本没写坏 JSON,而是被长度上限切掉了尾巴,正确补救是"更短的输出 + 更大预算"。
+_RETRY_HINT_JSON = "上次不是合法 JSON,请只输出 JSON,不要任何其它文字。"
+_RETRY_HINT_TRUNCATED = ("上次输出被长度上限截断,请直接给结论、reasons 精简,"
+                         "只输出 JSON,不要任何其它文字。")
+
+
+def _parse_failure_reason(attempts: int, finish_reasons: list, content_lens: list) -> str:
+    """解析失败的结论必须**自带一手证据**(DEC-006 A3)。
+
+    否则"为什么解析不出来"只能靠再花一次 token 复现 —— 本会话就卡在这里
+    (`docs/复盘/2026-09-12-门自身判分器预算缺陷.md` 错误 #2)。
+    """
+    last_finish = finish_reasons[-1] if finish_reasons else None
+    last_len = content_lens[-1] if content_lens else 0
+    why = ""
+    if "length" in finish_reasons:
+        why = " ⇒ 输出被 max_tokens 截断(reasoning 与 content 共用该上限)"
+    return (f"E_JUDGE_PARSE: 多次未返回合法结构化 JSON"
+            f"(尝试 {attempts} 次;末次 finish_reason={last_finish!r}、"
+            f"content 长度 {last_len}{why})")
 
 
 class JudgeError(Exception):
@@ -49,17 +74,24 @@ class JudgeVerdict:
         }
 
 
-def _openai_chat_http(cfg: JudgeConfig, messages: list[dict]) -> tuple[str, dict]:
+def _openai_chat_http(cfg: JudgeConfig, messages: list[dict],
+                      max_tokens: int | None = None) -> tuple[str, dict, str | None]:
     """OpenAI 兼容 chat completions 调用(纯标准库)。
 
-    返回 `(content, usage)`;`usage` 取响应里的 token 用量,供 L1「成本(judge token)」
+    返回 `(content, usage, finish_reason)`;`usage` 取响应里的 token 用量,供 L1「成本(judge token)」
     与契约 `评测-judge.md:44`「记录字段(报告侧必存)」使用(缺失则为空 dict)。
+
+    **`finish_reason` 必须回传**(DEC-006 A2):`'length'` 表示输出被 `max_tokens` 截断 ——
+    这与"模型不守格式"是**两种不同的失败**,截断时重试必须换参数(旧实现用同样参数重试,
+    对截断结构性无效)。
+
+    `max_tokens` 显式传入则覆盖配置(截断重试时放大预算用)。
     """
     url = cfg.base_url.rstrip("/") + "/chat/completions"
     payload = json.dumps({
         "model": cfg.model,
         "messages": messages,
-        "max_tokens": cfg.max_tokens,
+        "max_tokens": cfg.max_tokens if max_tokens is None else max_tokens,
         "temperature": 0,
     }).encode("utf-8")
     req = urllib.request.Request(
@@ -80,7 +112,10 @@ def _openai_chat_http(cfg: JudgeConfig, messages: list[dict]) -> tuple[str, dict
         raise JudgeError("E_JUDGE_TIMEOUT", f"judge 不可用: HTTP {e.code}")
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise JudgeError("E_JUDGE_TIMEOUT", f"judge 不可达/超时: {e}")
-    return data["choices"][0]["message"]["content"], (data.get("usage") or {})
+    choice = (data.get("choices") or [{}])[0]
+    return ((choice.get("message") or {}).get("content"),
+            (data.get("usage") or {}),
+            choice.get("finish_reason"))
 
 
 def _parse_verdict(text: str) -> JudgeVerdict | None:
@@ -127,9 +162,19 @@ class Judge:
 
     def __init__(self, cfg: JudgeConfig | None = None, chat=None):
         self.cfg = cfg or judge_config()
-        self._chat = chat or (lambda msgs: _openai_chat_http(self.cfg, msgs))
-        self.usage: dict[str, int] = {"calls": 0, "prompt_tokens": 0,
-                                      "completion_tokens": 0, "total_tokens": 0}
+        self._chat = chat or (lambda msgs, max_tokens=None:
+                              _openai_chat_http(self.cfg, msgs, max_tokens))
+        self.usage: dict[str, int] = {
+            "calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+            # DEC-006 A3:诊断计数 —— 随 `usage` 自动落进 run JSON。
+            # `calls` 与用例数对不上时,差额就是**被重试掩盖的失败次数**(复盘 R4)。
+            "retries": 0,          # 发生过几次"重试"(即第 2 次及以后的尝试)
+            "parse_failures": 0,   # 有几次尝试的内容解析不出合法 JSON
+            "truncated": 0,        # 有几次尝试 `finish_reason='length'`(输出被预算截断)
+            "parse_flags": 0,      # 有几条用例最终因解析失败记 flag
+        }
+        # 最近一次 `grade()` 的逐次尝试轨迹(供 trace 记"这条为什么走得慢")。
+        self.last_diagnostics: dict = {}
 
     def _record_usage(self, usage: dict | None) -> None:
         self.usage["calls"] += 1
@@ -139,14 +184,19 @@ class Judge:
             except (TypeError, ValueError):
                 pass
 
-    def _call_chat(self, msgs: list[dict]) -> str:
-        """调底层 chat。返回 `(content, usage)` 元组则累计用量;注入桩返回 str 亦可。"""
-        out = self._chat(msgs)
+    def _call_chat(self, msgs: list[dict],
+                   max_tokens: int | None = None) -> tuple[str | None, str | None]:
+        """调底层 chat,返回 `(content, finish_reason)`。
+
+        注入桩可返回 str、`(content, usage)`、`(content, usage, finish_reason)`;
+        仅当需要**放大预算**(截断重试)时才把 `max_tokens` 传给桩,以保持既有桩的兼容。
+        """
+        out = self._chat(msgs) if max_tokens is None else self._chat(msgs, max_tokens=max_tokens)
         if isinstance(out, tuple):
-            content, usage = out
+            content, usage, finish = (list(out) + [None, None])[:3]
             self._record_usage(usage)
-            return content
-        return out
+            return content, finish
+        return out, None
 
     def enabled(self) -> bool:
         return self.cfg.enabled()
@@ -177,21 +227,54 @@ class Judge:
         return [{"role": "system", "content": sys}, {"role": "user", "content": user}]
 
     def grade(self, item: dict) -> JudgeVerdict:
+        attempts = 0
+        finish_reasons: list[str | None] = []
+        content_lens: list[int] = []
+        budget: int | None = None          # None = 用配置值;截断后放大
+        last_finish: str | None = None
         for attempt in range(1 + self.cfg.retries):
             msgs = self._messages(item)
             if attempt > 0:
-                msgs = msgs + [{"role": "user", "content": "上次不是合法 JSON,请只输出 JSON,不要任何其它文字。"}]
+                self.usage["retries"] += 1
+                # 重试提示语必须说明**真实原因**:截断与"不守格式"的补救方向不同。
+                msgs = msgs + [{"role": "user", "content":
+                                _RETRY_HINT_TRUNCATED if last_finish == "length"
+                                else _RETRY_HINT_JSON}]
+            attempts += 1
             try:
-                text = self._call_chat(msgs)
+                text, last_finish = self._call_chat(msgs, budget)
             except JudgeError as e:
                 # 契约 评测-judge.md:41「超时:重试 1 次 → 仍超时抛 E_JUDGE_TIMEOUT」
                 if e.code == "E_JUDGE_TIMEOUT" and attempt < self.cfg.retries:
                     continue
                 raise
+            finish_reasons.append(last_finish)
+            content_lens.append(len(text or ""))
+            if last_finish == "length":
+                self.usage["truncated"] += 1
+                # 截断 ⇒ 下次尝试给更大预算;不放大则重试**必然**再次被截断(DEC-006 A2)。
+                budget = min((budget or self.cfg.max_tokens) * 2, MAX_TOKENS_CEILING)
             verdict = _parse_verdict(text)
             if verdict is not None:
+                self._record_diagnostics(attempts, finish_reasons, content_lens)
                 return verdict
-        return JudgeVerdict(verdict="flag", score=0.0, reasons=["E_JUDGE_PARSE: 多次未返回合法结构化 JSON"])
+            self.usage["parse_failures"] += 1
+        self.usage["parse_flags"] += 1
+        self._record_diagnostics(attempts, finish_reasons, content_lens)
+        return JudgeVerdict(verdict="flag", score=0.0,
+                            reasons=[_parse_failure_reason(attempts, finish_reasons, content_lens)])
+
+    def _record_diagnostics(self, attempts: int, finish_reasons: list,
+                            content_lens: list) -> None:
+        self.last_diagnostics = {"attempts": attempts,
+                                 "finish_reasons": list(finish_reasons),
+                                 "content_lens": list(content_lens)}
+
+    def effective_config(self) -> dict:
+        """生效配置(进 run 产物,让"实际用的什么预算"看得见 —— DEC-006 A4)。"""
+        return {"model": self.cfg.model, "base_url": self.cfg.base_url,
+                "max_tokens": self.cfg.max_tokens, "retries": self.cfg.retries,
+                "timeout_s": self.cfg.timeout_s}
 
     def grade_ref(self, refs: list[dict]) -> float | None:
         """judge 判定 vs 人工标签 一致率(refs 含 human:True/False)。"""
@@ -212,6 +295,14 @@ class FakeJudge(Judge):
 
     def enabled(self) -> bool:
         return False
+
+    def effective_config(self) -> dict | None:
+        """离线替身没有"生效预算"可言。
+
+        不覆盖的话会从基类继承出一个 `model=None, max_tokens=4096` 的**假配置**,
+        让产物看起来像真调过模型(与 `label()=='offline'` 的诚实口径冲突)。
+        """
+        return None
 
     def grade(self, item: dict) -> JudgeVerdict:
         exp = item.get("expected") or {}
