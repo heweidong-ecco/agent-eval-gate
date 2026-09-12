@@ -43,6 +43,8 @@ def _parser() -> argparse.ArgumentParser:
     c.add_argument("--refs", required=True, help="人工标注参照集 JSON(见 eval/judge_refs.json)")
     c.add_argument("--offline", action="store_true", help="用离线 FakeJudge(不发真实模型请求)")
     c.add_argument("--threshold", default="eval/阈值.json", help="阈值文件(取 judge_human_agreement.min)")
+    c.add_argument("--fail-on-below", action="store_true",
+                   help="低于阈值 min 时返回 exit 1(**默认关闭**;是否接进自动门由使用方决定,DEC-008 §5)")
     return p
 
 
@@ -243,13 +245,23 @@ def _cmd_calibrate(args) -> int:
             bad = [d["ref_id"] for d in out["detail"] if not d["agree"] and not d["human"]]
             print(f"  ⚠️ 漏放 {out['n_false_positive']} 条(人判不满足、判分器却放行):{', '.join(bad)}")
     mn = _judge_agreement_min(args.threshold)
-    if mn is not None:
-        print(f"  阈值 judge_human_agreement.min = {mn:.2f}"
-              + ("" if out["agreement"] is None
-                 else f" ⇒ {'达标 ✅' if out['agreement'] >= mn else '未达标 ❌'}"))
+    below = False
+    if mn is None:
+        print("  ⚠️ 阈值文件里没有 judge_human_agreement.min ⇒ 无法比对")
+        below = args.fail_on_below          # fail-closed:比不了不算通过
+    else:
+        print(f"  阈值 judge_human_agreement.min = {mn:.2f}")
+        if out["agreement"] is None:
+            below = args.fail_on_below      # fail-closed:算不出来也不算通过
+        else:
+            below = out["agreement"] < mn
+            print(f"  ⇒ {'未达标 ❌' if below else '达标 ✅'}")
     if usage.get("calls"):
         print(f"  judge 调用 {usage['calls']} 次 · token {usage.get('total_tokens', 0)}")
-    return 0
+    # ⚠️ **默认不阻断**(DEC-008 §5):开关只在此刻显式传入时才生效 ——
+    # 一致率反映的是**门自己**跟人齐不齐,拿它拦被测的发布会拦错对象;
+    # 且 n=15 的 1.00 与 0.80 在统计上还分不开。是否接进自动门由使用方决定。
+    return 1 if (args.fail_on_below and below) else 0
 
 
 def _judge_agreement_min(path: str) -> float | None:

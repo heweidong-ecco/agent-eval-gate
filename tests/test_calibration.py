@@ -239,3 +239,41 @@ def test_judge_agreement_does_not_block_yet(tmp_path):
     assert thr["l2_task_completion"]["min"] == 0.8
     assert thr["judge_human_agreement"]["min"] == 0.99   # 值被读到(记录在案)
     assert set(thr) - {"l2_task_completion", "redteam_zero", "judge_human_agreement"} == set()
+
+
+# ── `--fail-on-below`:可选的阻断开关(DEC-008 §5:不默认接进任何自动门)──
+def test_fail_on_below_returns_nonzero_when_below_min(tmp_path, monkeypatch, capsys):
+    """开了开关且低于 min ⇒ exit 1。默认**不开**;是否拦门由使用方决定。"""
+    _stub_judge(monkeypatch)
+    p = _refs_file(tmp_path)          # 桩判分器得 2/3 ≈ 0.67(< 0.80)
+    rc = cli.main(["calibrate", "--refs", str(p), "--fail-on-below"])
+    assert rc == 1
+    assert "未达标" in capsys.readouterr().out
+
+
+def test_fail_on_below_passes_when_at_or_above_min(tmp_path, monkeypatch):
+    _stub_judge(monkeypatch)
+    # 把 d(那条误杀)标成"不满足" ⇒ 3/3 = 1.00
+    refs = _json.loads(_refs_file(tmp_path).read_text(encoding="utf-8"))
+    refs["refs"][3]["human"] = False
+    p = tmp_path / "ok.json"
+    p.write_text(_json.dumps(refs, ensure_ascii=False), encoding="utf-8")
+    assert cli.main(["calibrate", "--refs", str(p), "--fail-on-below"]) == 0
+
+
+def test_fail_on_below_is_fail_closed_without_labels(tmp_path, monkeypatch, capsys):
+    """**算不出来 ≠ 通过** —— 与阈值读不到就回落更严同一条纪律(不放宽门)。"""
+    _stub_judge(monkeypatch)
+    p = tmp_path / "none.json"
+    p.write_text(_json.dumps({"refs": [
+        {"ref_id": "a", "question": "q", "expected": {"answer_contains": ["x"]},
+         "sut_answer": "x", "human": None}]}, ensure_ascii=False), encoding="utf-8")
+    rc = cli.main(["calibrate", "--refs", str(p), "--fail-on-below"])
+    assert rc == 1
+    assert "无法计算" in capsys.readouterr().out
+
+
+def test_without_the_flag_it_never_blocks(tmp_path, monkeypatch):
+    """⚠️ 守"**默认不阻断**"这条未决决定:DEC-008 §5 只把开关做出来,不接进任何自动门。"""
+    _stub_judge(monkeypatch)
+    assert cli.main(["calibrate", "--refs", str(_refs_file(tmp_path))]) == 0
