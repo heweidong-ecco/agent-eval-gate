@@ -198,3 +198,39 @@ def test_chat_http_honours_budget_override(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     _openai_chat_http(_cfg(max_tokens=512), [{"role": "user", "content": "x"}], 2048)
     assert sent[0]["max_tokens"] == 2048
+
+
+# ── T8:判分器的**口径边界**必须写进 prompt(提示即代码 ⇒ 要有回归测试)──
+def _sys_prompt() -> str:
+    from eval_gate.judge import Judge
+    j = Judge(_cfg())
+    return j._messages(build_item(1, "q", {"answer_contains": ["x"]}, "x"))[0]["content"]
+
+
+def test_prompt_states_answer_contains_is_any_one_hit():
+    """守着 dbc2416 修好的那条语义 —— 它此前**没有回归测试**,改 prompt 时可能被静默丢掉。"""
+    sysp = _sys_prompt()
+    assert "含其一即符" in sysp
+    assert "任意一个" in sysp
+
+
+def test_prompt_states_refusal_boundary_rule():
+    """**T8 主角**:被测整句是拒答、但句中出现了候选词时,不得因"没真正回答"改判 flag/fail。
+
+    M1 首测暴露分歧 3/3 全是这个形状(半拒答)→ 判分器给 flag,而业务方裁定口径是 pass。
+    根因:prompt 只说了「含其一即符」,没说"拒答语境下也算" ⇒ 模型用常识补位给了"存疑"。
+    """
+    sysp = _sys_prompt()
+    assert "拒答" in sysp
+    assert "即算满足" in sysp or "也要判 pass" in sysp
+    assert "不得" in sysp and ("flag" in sysp)
+
+
+def test_prompt_does_not_license_passing_non_refusal_stuffing():
+    """⚠️ **收窄的边界**:只放开"拒答语境",**不**放开"答非所问的关键词堆砌" ——
+    后者是 DEC-004 刻意保留的防堆砌闸(判分器仍可判 fail)。
+
+    若哪天把"答非所问"也写成 pass,这条会变红 —— 那必须先有 DEC(见 DEC-009 §未决)。
+    """
+    sysp = _sys_prompt()
+    assert "答非所问" not in sysp.replace("答非所问时", ""), "不得把『答非所问』也写成放行条件"
