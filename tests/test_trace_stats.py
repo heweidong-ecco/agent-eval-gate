@@ -7,7 +7,8 @@ from pathlib import Path
 
 from eval_gate.obs import STATUS_ERROR, STATUS_OK, Span
 from eval_gate.trace_stats import (baseline_document, error_stats, latency_stats,
-                                   merge_runs, span_groups, summarize_run, sut_of)
+                                   merge_runs, overhead_ratio, span_groups,
+                                   summarize_run, sut_of, system_error_rate)
 
 
 def _span(name, ms, status=STATUS_OK, **attrs):
@@ -106,6 +107,70 @@ def test_baseline_document_carries_basis_and_limitations():
                             {"_rev": "2026-09-13", "_basis": "x"})
     assert doc["_rev"] == "2026-09-13"
     assert doc["_limitations"]  # 局限必须随文件走,不能只在报告里
+
+
+# ── L1 口径(2026-09-13 澄清,见 DEC-012 §2.3)─────────────────────
+def test_system_error_rate_excludes_rule_check():
+    """⚠️ `rule.check` 的 error 表示「该 case 未过判据」—— 是**评测结论**,不是系统故障。
+
+    按字面把「所有 error span 占比」当错误率,会把「用例没通过」算成「系统出错」。
+    """
+    spans = [
+        _span("sut.call", 100),                                   # ok
+        _span("sut.call", 100, status=STATUS_ERROR),              # 系统故障 ✅ 计入
+        _span("judge.grade", 100),                                # ok
+        _span("judge.grade", 100, status=STATUS_ERROR),           # judge 故障 ✅ 计入
+        _span("rule.check", 100, status=STATUS_ERROR),            # 判据未过 ❌ 不计入
+        _span("rule.check", 100, status=STATUS_ERROR),
+    ]
+    got = system_error_rate(spans)
+    assert got == {"n": 4, "n_error": 2, "rate": 0.5}
+
+
+def test_system_error_rate_is_None_when_unmeasurable():
+    """无样本 ⇒ None(不是 0)—— 「没测到」不能冒充「错误率 0」。"""
+    assert system_error_rate([])["rate"] is None
+
+
+def test_overhead_ratio_is_gate_own_uncovered_time():
+    """门自身编排开销占比 = (根 span − 直接子 span 之和) / 根 span。
+
+    这是 L1 里**唯一"我方可控"**的量(墙钟/被测延迟由外部支配)。
+    """
+    spans = [
+        Span(trace_id="t", span_id="root", name="run.evaluate", kind="CHAIN",
+             duration_ms=1000.0, status=STATUS_OK, attributes={}),
+        Span(trace_id="t", span_id="a", parent_span_id="root", name="sut.call", kind="AGENT",
+             duration_ms=900.0, status=STATUS_OK, attributes={}),
+    ]
+    got = overhead_ratio(spans)
+    assert got["root_ms"] == 1000.0
+    assert got["uncovered_ms"] == 100.0
+    assert got["ratio"] == 0.1
+
+
+def test_overhead_ratio_is_None_without_root():
+    assert overhead_ratio([])["ratio"] is None
+
+
+def test_overhead_ratio_finds_run_root_not_first_span():
+    """⚠️ 真 CLI 轮次里 **第一个 span 是 `evalset.load`**,`run.evaluate` 在后面。
+
+    第一版直接拿 `spans[0]` 当根(照抄 `bench.attribute_spans` 的约定),
+    于是把 `evalset.load`(0.2ms)当成了整轮 ⇒ 占比算成 1.0 ⇒ **误报阻断**。
+    """
+    spans = [
+        Span(trace_id="t", span_id="load", name="evalset.load", kind="CHAIN",
+             duration_ms=0.2, status=STATUS_OK, attributes={}),
+        Span(trace_id="t", span_id="root", name="run.evaluate", kind="CHAIN",
+             duration_ms=1000.0, status=STATUS_OK, attributes={}),
+        Span(trace_id="t", span_id="a", parent_span_id="root", name="sut.call", kind="AGENT",
+             duration_ms=990.0, status=STATUS_OK, attributes={}),
+    ]
+    got = overhead_ratio(spans)
+    assert got["root_ms"] == 1000.0          # 必须是 run.evaluate,不是 evalset.load
+    assert got["uncovered_ms"] == 10.0
+    assert got["ratio"] == 0.01
 
 
 def test_baseline_document_declares_run_to_run_instability():

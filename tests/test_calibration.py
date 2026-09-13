@@ -238,7 +238,11 @@ def test_judge_agreement_does_not_block_yet(tmp_path):
     thr = default_thresholds(p)
     assert thr["l2_task_completion"]["min"] == 0.8
     assert thr["judge_human_agreement"]["min"] == 0.99   # 值被读到(记录在案)
-    assert set(thr) - {"l2_task_completion", "redteam_zero", "judge_human_agreement"} == set()
+    # ⚠️ 本条守卫的用意 =「**新增阈值键必须先有 DEC**」,而非"键集合永久不变"。
+    # L1 两个键由 DEC-012(2026-09-13 采纳)有意加入,且**接线为阻断项**;
+    # 之后任何**未伴随 DEC** 的新键仍会在这里变红。
+    assert set(thr) - {"l2_task_completion", "redteam_zero", "judge_human_agreement",
+                       "l1_system_error_rate", "l1_gate_overhead_ratio"} == set()
 
 
 # ── `--fail-on-below`:可选的阻断开关(DEC-008 §5:不默认接进任何自动门)──
