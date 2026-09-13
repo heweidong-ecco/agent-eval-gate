@@ -96,6 +96,25 @@ def _probes(n: int) -> list[int]:
     return sorted({max(2, n // 3), max(2, 2 * n // 3), n})
 
 
+#: 单轮(一次完整评测集评估)的**实测** token 量级 —— 用于 live 预算提示。
+#: 依据:真实链路 48 条一轮实测 2.86–2.99 万(见 `eval/l1_baseline.json` 与 P4-2 报告);
+#: 这里取保守的 2.4 万(与 ROADMAP 的 M2 报备口径一致)。
+EST_TOKENS_PER_ROUND = 24_000
+
+
+def rounds_planned(n: int, repeats: int, no_curve: bool) -> int:
+    """本实验将跑多少「轮」(= 多少次完整评测集评估)。**这是预算守卫的依据。**
+
+    轮数 = 单次实验(`2N`)+ N 曲线(`2·repeats·Σprobes`)。
+
+    ⚠️ N 曲线的放大是**乘法**的:`_probes(20)` 有 3 个采样点、平均约 13,
+    `repeats` 默认 10 ⇒ N=20 时 **40 轮 → 820 轮(约 19.5×)**。
+    live 模式下 1 轮 ≈ 2.4 万 token ⇒ 不加 `--no-curve` 会从 ~96 万涨到 ~1968 万。
+    """
+    base = 2 * n
+    return base if no_curve else base + 2 * repeats * sum(_probes(n))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="A/B 统计回归(默认离线合成抖动)")
     ap.add_argument("--evals", required=True)
@@ -105,6 +124,9 @@ def main(argv=None) -> int:
     ap.add_argument("--repeats", type=int, default=10, help="整个实验重复次数(算检出率)")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--live", action="store_true", help="用真实 judge(消耗 token)")
+    ap.add_argument("--no-curve", action="store_true",
+                    help="跳过 N 曲线,只做单次实验(= 2N 轮)。**live 下这是预算守卫**:"
+                         "曲线会把轮数放大约 19.5×(N=20 时 40→820)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
@@ -126,6 +148,17 @@ def main(argv=None) -> int:
         return 3
 
     cfg = judge_config() if args.live else None
+    # ⚠️ 预算提示放在**配置检查之前**:这样即使 judge 没配好,操作者也能立刻看到
+    # "这一跑要多少轮/多少 token"(也让这条守卫在离线环境下**可测**)。
+    if args.live:
+        plan = rounds_planned(args.n, args.repeats, args.no_curve)
+        where = "已加 --no-curve" if args.no_curve else "⚠️ **未加 --no-curve**"
+        print(f"[ab] 计划轮数 = {plan}({where})·估算 ≈ {plan * EST_TOKENS_PER_ROUND:,} tokens",
+              file=sys.stderr)
+        if not args.no_curve:
+            print(f"[ab] ⚠️ N 曲线把轮数从 {2 * args.n} 放大到 {plan}"
+                  f"(约 {plan / (2 * args.n):.1f}×)⇒ 估算 token 同比例放大。"
+                  f"若只要「N={args.n}/臂」的单次实验,请加 --no-curve。", file=sys.stderr)
     if args.live and not cfg.enabled():
         print("[ab] --live 需配置 EVAL_JUDGE_BASE_URL/API_KEY/MODEL;"
               "拒绝静默回落到合成抖动(那会冒充真实噪声)", file=sys.stderr)
@@ -138,24 +171,28 @@ def main(argv=None) -> int:
         return lambda i: JitterJudge(p, base_seed + i)
 
     t0 = time.time()
+    plan = rounds_planned(args.n, args.repeats, args.no_curve)
+
     # ① 单次实验(N 轮/臂)→ 报告主结论
     rates_a = _run_arm(ev, arm(args.arm_a, args.seed), args.n)
     rates_b = _run_arm(ev, arm(args.arm_b, args.seed + SEED_OFFSET_B), args.n)
     single = ab_verdict(rates_a, rates_b)
 
     # ② N 曲线:每个采样点重复 R 次,算「判为退化」的比例
+    #    `--no-curve` 时跳过 —— live 下这是预算守卫(见 `rounds_planned`)
     curve = []
-    for n_probe in _probes(args.n):
-        detected = 0
-        for r in range(args.repeats):
-            sa = args.seed + 1000 * r
-            sb = sa + SEED_OFFSET_B
-            ra = _run_arm(ev, arm(args.arm_a, sa), n_probe)
-            rb = _run_arm(ev, arm(args.arm_b, sb), n_probe)
-            if ab_verdict(ra, rb)["verdict"] == "regressed":
-                detected += 1
-        curve.append({"n": n_probe, "detection_rate": detected / args.repeats,
-                      "repeats": args.repeats})
+    if not args.no_curve:
+        for n_probe in _probes(args.n):
+            detected = 0
+            for r in range(args.repeats):
+                sa = args.seed + 1000 * r
+                sb = sa + SEED_OFFSET_B
+                ra = _run_arm(ev, arm(args.arm_a, sa), n_probe)
+                rb = _run_arm(ev, arm(args.arm_b, sb), n_probe)
+                if ab_verdict(ra, rb)["verdict"] == "regressed":
+                    detected += 1
+            curve.append({"n": n_probe, "detection_rate": detected / args.repeats,
+                          "repeats": args.repeats})
 
     doc = {
         "tool": "tools/ab_regression.py",
@@ -173,6 +210,8 @@ def main(argv=None) -> int:
         },
         "run": {"commit": _git_commit(), "n": args.n, "repeats": args.repeats,
                 "seed": args.seed, "seed_offset_b": SEED_OFFSET_B,
+                # 预算守卫:轮数落盘,事后可核"这轮本该花多少"
+                "no_curve": args.no_curve, "rounds_planned": plan,
                 "elapsed_s": round(time.time() - t0, 2),
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z")},
     }
