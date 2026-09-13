@@ -5,8 +5,43 @@ run/report 结构写为 eval/runs/<run_id>.local.json(.gitignore 已忽略 *.loc
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import subprocess
 from pathlib import Path
+
+from eval_gate.config import ROOT
+
+
+# ── 契约声明字段的取值(DEC-016)────────────────────────────────
+# 契约 `评测-report.md:20-28` 声明了 run 记录的 11 个字段,而 2026-09-13 实测**产物只有 4 个**
+# (该缺口 `docs/部署.md:96` 2026-09-11 已登记却未修)。以下三处把缺的补齐。
+def _evals_meta(ev_path) -> tuple[object, str | None]:
+    """从评测集文件读出 `(version, sha12)`。读不到 ⇒ `(None, None)`,**不抛**。"""
+    try:
+        raw = Path(ev_path).read_bytes()
+        return json.loads(raw.decode("utf-8")).get("version"), \
+            hashlib.sha256(raw).hexdigest()[:12]
+    except (OSError, ValueError, AttributeError):
+        return None, None
+
+
+def _threshold_rev() -> str | None:
+    """生效阈值文件的 `_rev`(它变 ⇒ 判定口径变,产物必须能自答)。"""
+    try:
+        return json.loads((ROOT / "eval" / "阈值.json").read_text(encoding="utf-8")).get("_rev")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _git_commit() -> str | None:
+    """本仓(门自身)的 commit —— 与**被测**的版本是两件事,不要混。"""
+    try:
+        out = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+        return out or None
+    except (OSError, subprocess.SubprocessError):
+        return None
 
 
 def format_duration(seconds) -> str:
@@ -59,14 +94,23 @@ def write_run(result, outdir: str | Path, ev_path: str | Path, judge_label: str)
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{result.run_id}.local.json"
+    _ev_ver, _ev_sha = _evals_meta(ev_path)
     doc = {
         "run_id": result.run_id,
+        # 契约声明的「这轮用的是什么」字段(DEC-016 补齐;此前只有 evals_file 路径)
+        "eval_version": _ev_ver,
+        "evals_file_sha": _ev_sha,
+        "threshold_rev": _threshold_rev(),
+        "git_commit": _git_commit(),
+        "started_at": getattr(result, "started_at", None),
         "evals_file": str(ev_path),
         "judge": judge_label,
         # judge 成本(L1 / 契约 评测-judge.md:44「记录字段(报告侧必存)」)
         "judge_usage": result.judge_usage,
         # 生效 judge 配置(A4):"这轮实际用的什么预算"必须可从产物回答
         "judge_config": getattr(result, "judge_config", None),
+        # DEC-016:被测侧自证(judge 侧早已自证;被测侧此前一个字段都没有)
+        "sut": getattr(result, "sut_info", None),
         "summary": result.summary,
         "applied_thresholds": result.applied_thresholds,
         "blockers": result.blockers,

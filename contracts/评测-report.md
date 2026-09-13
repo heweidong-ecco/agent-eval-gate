@@ -16,17 +16,39 @@
 
 ## run / report 结构
 ```jsonc
-// run 记录(E7 基准库)
+// run 记录(E7 基准库)—— 字段在 2026-09-13(DEC-016)补齐;此前声明 11 个、落地只有 4 个
 {
   "run_id": "20260909-<ts>-<sha>",         // 幂等/断点续跑锚
-  "eval_version": 1, "evals_file_sha": "…",
-  "sut_versions": {"fastapi-rag": "被测仓 commit 36aa291", "mini-rag-qa": "…"},
-  "judge": {"model": "…", "version": "…"},
-  "threshold_rev": "…", "git_commit": "…", "started_at": "…",
+  "eval_version": 1, "evals_file_sha": "…",   // 评测集版本 + 内容 sha(同版本改内容也追得住)
+  "threshold_rev": "…", "git_commit": "…",    // 生效阈值 rev · **门自身**的 commit(非被测)
+  "started_at": "2026-09-13T17:14:56+0800",   // **运行开始**时刻(不是落盘时刻)
+  "sut": {                                     // ← 被测侧自证(DEC-016)
+    "endpoints": {"fastapi-rag": {"adapter": "FastApiRagAdapter",
+                                  "base_url": "http://127.0.0.1:8000",
+                                  "mode": "accurate_norerank", "top_k": 3}},
+    "versions":  {"fastapi-rag": "f2dad78"},   // 契约原写顶层 `sut_versions` = **per-sut 映射**
+    "probe": "ok"                              // 能力探针结果 ok/fail;缺省 null
+  },
+  "judge": "offline|deepseek-v4-flash@…",      // 见下方「与旧声明的三处差异」
+  "judge_config": {"model": "…", "max_tokens": 4096, "retries": 1, "timeout_s": 60.0},
   "degraded": false, "degraded_reason": null,   // 熔断/整批 aborted;true ⇒ exit 3 且阈值判定作废
-  "exit": 0
+  "exit_code": 0
 }
 ```
+
+### 与旧声明(2026-09-09 版)的三处差异 —— **如实声明,不是静默对齐**
+
+| 旧声明 | 现形态 | 为什么 |
+|---|---|---|
+| 顶层 `sut_versions: {sut: 版本}` | **`sut.versions`**(收进 `sut` 块) | 该字段**从未实现** ⇒ 无兼容负担;而"被测是谁、在哪、什么模式、什么版本"是**同一个问题**,收进一块更好读 |
+| `judge: {model, version}` | `judge`(标签)+ **`judge_config`**(model/max_tokens/retries/timeout) | `judge_config` 是 `DEC-006 A4` 加的**更完整**的自证(含**预算**);两者合起来覆盖原意图 |
+| `exit: 0` | **`exit_code`** | 实现/报告/复盘/CI 文档**一律用 `exit_code`** ⇒ 把契约对齐到既有事实,而不是反向改代码 |
+
+> ⚠️ **本条的历史**:契约 2026-09-09 声明 11 个字段,**落地只有 4 个**;
+> 该缺口 `docs/部署.md:96` 于 **2026-09-11 已登记**却一直未修 ——
+> 而同期 P4-1 的《集成测试报告》写着「契约**零漂移**」(那条结论**只覆盖了被抽查的字段**)。
+> ⇒ 2026-09-13(DEC-016)一次性补齐,并把「契约↔产物」做成**可机检**的测试
+> (`tests/test_sut_identity.py::test_run_record_carries_all_contract_declared_fields`)。
 ```jsonc
 // report(E7 报告 + 审计;逐条留证据)
 {

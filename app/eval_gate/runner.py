@@ -55,7 +55,11 @@ class RunResult:
     # 生效 judge 配置(A4):产物里要能回答"这轮实际用的什么预算" —— 否则事后只能靠
     # 读代码+推环境(2026-09-12 排查 T7 时正是如此)。无真 judge(离线替身)则为 None。
     judge_config: dict | None = None
-
+    # DEC-016:被测侧自证 —— judge 侧早已自证(DEC-006 A4),被测侧此前一个字段都没有。
+    # 动机:2026-09-13 查「轮间 2× 延迟」时**查不动**,因为没有可比对的字段。
+    sut_info: dict | None = None
+    # 契约 评测-report.md:25 的 started_at(在**运行开始**取值,不是落盘时刻)
+    started_at: str | None = None
 
 THRESHOLD_FILE = ROOT / "eval" / "阈值.json"
 
@@ -258,6 +262,18 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
     return res, True
 
 
+def sut_identity(adapter) -> dict:
+    """适配器自证信息(DEC-016):这轮跑的是**哪个实现、打到哪、什么模式**。
+
+    ⚠️ **只记端点,不记密钥** —— `api_key` 绝不进产物。
+    缺省记 `None` 而**不是省略**:「没有」与「没记」必须能分开。
+    """
+    return {"adapter": type(adapter).__name__,
+            "base_url": getattr(adapter, "base_url", None),
+            "mode": getattr(adapter, "mode", None),
+            "top_k": getattr(adapter, "top_k", None)}
+
+
 def l1_gate_verdict(tracer: Tracer | None, thr: dict) -> tuple[dict, list[str]]:
     """L1 判定(DEC-012 方案 C+E)。返回 `(metrics, blockers)`。
 
@@ -320,6 +336,7 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
     active_judge: Judge | None = judge if judge is not None else FakeJudge()
 
     case_results: list[dict] = []
+    sut_seen: dict[str, dict] = {}      # DEC-016
     passed = failed = flag = redteam_hits = skipped = 0
     soft_miss_judge_pass = 0   # 软层未命中、judge 救回(DEC-004 §3:只观测,不进阈值)
     rule_hit_judge_fail = 0    # 软层命中、judge 判 fail
@@ -335,7 +352,10 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
                 adapter_kw = {"quality": quality_by_sut[case.sut]}
             with _span(tracer, "sut.call", kind="AGENT", case_id=case.id, sut=case.sut) as ssp:
                 try:
-                    output = _sut_call_with_retry(get_adapter(case.sut, **adapter_kw), case, tracer)
+                    _adapter = get_adapter(case.sut, **adapter_kw)
+                    if case.sut not in sut_seen:            # DEC-016:每个 sut 只记一次
+                        sut_seen[case.sut] = sut_identity(_adapter)
+                    output = _sut_call_with_retry(_adapter, case, tracer)
                 except SutAdapterError as e:
                     _mark(ssp, STATUS_ERROR, e.code.name, e)
                     case_results.append({
@@ -501,4 +521,10 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
                      exit_code=exit_code, blockers=blockers,
                      applied_thresholds=thr, judge_label=judge_label,
                      degraded=degraded, degraded_reason=degraded_reason,
-                     judge_usage=judge_usage, judge_config=judge_config)
+                     judge_usage=judge_usage, judge_config=judge_config,
+                     started_at=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                     sut_info={"endpoints": sut_seen,
+                               # 契约 评测-report.md:23 的 sut_versions 是 **per-sut 映射**;
+                               # 版本由 sut-harness 经环境变量供给 —— 门**不可能**自己知道被测 commit。
+                               "versions": {k: os.getenv("EVAL_SUT_VERSION") for k in sut_seen},
+                               "probe": os.getenv("EVAL_SUT_PROBE")})
