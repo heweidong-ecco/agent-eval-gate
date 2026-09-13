@@ -75,6 +75,10 @@ def test_checker_self_verifies_which_tree_it_imported(tmp_path):
     r = _run_checker(repo)
     assert "自证" in r.stdout and "✅ 用的是" in r.stdout, \
         f"自证步骤缺失或未通过;stdout={r.stdout!r}"
-    # 且它导入的路径必须落在临时树内(不是本机安装的那份)
+    # ⚠️ 断言它**导入的不是本仓那份代码** —— 这才是"自证"要保证的性质。
+    #    (初版断言"路径含 fixture 仓"是错的:检查器解到**它自己 mktemp 的树**里,与 fixture 无关;
+    #     而它当时在 macOS 上能过,是因为我加了 `or "/private" in line` 的兜底 —— **因错而绿**,
+    #     被 CI(Linux)当场抓出。教训同本篇:`没报错`/`本地过` 都不等于 `对了`。)
     line = next(ln for ln in r.stdout.splitlines() if "✅ 用的是" in ln)
-    assert str(repo) in line or "/private" in line, line
+    assert str(ROOT / "app") not in line, f"它导入了本仓的代码 ⇒ 自证无效:{line}"
+    assert "/app/eval_gate/__init__.py" in line, line
