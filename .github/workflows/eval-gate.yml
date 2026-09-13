@@ -42,6 +42,12 @@ jobs:
         # 口径:total>0 ∧ 失败=0 ∧ 错误=0 ∧ 跳过 ≤ 基线(默认 2 = live_smoke 的 2 条)
         run: python tools/check_pytest_report.py /tmp/junit.xml
 
+      - name: 密闭性自检:测试**不得依赖本地产物**
+        # 判据:在「只含 git 跟踪文件」的临时树上再跑一遍全量测试 —— 那正是 CI 自己这棵树。
+        # 动机(2026-09-13 实证):一个测试 glob 了被 gitignore 的产物 ⇒ **本地绿、CI 红**。
+        # 「靠人记得去查」= 等于没有 ⇒ 挂成门(已做**突变验证**:注入一条依赖本地产物的测试,此步确实变红)。
+        run: sh tools/check_hermetic.sh
+
       - name: 自证:忠实被测应过门(exit 0)
         run: python -m eval_gate run --evals eval/mini_rag_qa.evals.json --mode good --offline
 
