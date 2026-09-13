@@ -84,3 +84,22 @@ else
 fi
 
 log "就绪:被测在 http://127.0.0.1:$PORT(容器 $CONTAINER)"
+
+# ── 被测侧自证(DEC-016)────────────────────────────────────────
+# 门**不可能**自己知道被测的 commit,也不该去问 ⇒ 由本层(唯一知道被测仓与探针结果的一层)导出。
+# 写出而非 export:本脚本是子进程,export 传不回调用者的 shell。
+# 用法:跑评测前 `set -a; . eval/runs/.sut-harness.env; set +a`
+# ⚠️ 本脚本此前**没有** ROOT 变量(实测);不定义就写成了 `/eval/runs/…`(根目录!)
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+IDENTITY="$ROOT/eval/runs/.sut-harness.env"
+SUT_COMMIT="$(git -C "$SUT_REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+PROBE_RESULT="ok"
+[ -z "$API_KEY" ] && PROBE_RESULT="skipped"
+mkdir -p "$(dirname "$IDENTITY")"
+cat > "$IDENTITY" <<EOF
+# 由 tools/sut-harness/run_sut.sh 自动生成(勿手改);DEC-016 的被测侧自证
+EVAL_SUT_VERSION=$SUT_COMMIT
+EVAL_SUT_PROBE=$PROBE_RESULT
+EOF
+log "被测自证已写入 $IDENTITY(commit=$SUT_COMMIT · 探针=$PROBE_RESULT)"
+log "⇒ 跑评测前先:set -a; . eval/runs/.sut-harness.env; set +a"
