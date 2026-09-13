@@ -16,6 +16,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+from eval_gate.bench import env_fingerprint
 from eval_gate.calib import compute_agreement
 from eval_gate.config import judge_config
 from eval_gate.judge import FakeJudge, Judge, build_item
@@ -293,7 +294,8 @@ def _cmd_stats(args) -> int:
     doc = baseline_document(
         merge_runs(records),
         {"_rev": args.rev or date.today().isoformat(),
-         "_basis": "runs=" + ",".join(r["run_id"] for r in records)},
+         "_basis": "runs=" + ",".join(r["run_id"] for r in records),
+         "_env": env_fingerprint()},
     )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

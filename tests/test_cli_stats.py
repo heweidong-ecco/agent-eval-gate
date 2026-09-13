@@ -24,6 +24,17 @@ def test_stats_writes_baseline(tmp_path):
     assert doc["_limitations"]
 
 
+def test_stats_records_env_fingerprint(tmp_path):
+    """B §五第 1 条:环境需记录,支撑前后对比 —— 跨机器比吞吐时必须先看它。"""
+    _mk(tmp_path, "r1", [
+        {"trace_id": "t", "span_id": "b", "name": "sut.call", "kind": "AGENT",
+         "duration_ms": 100.0, "status": "ok", "attributes": {"sut": "x"}}])
+    out = tmp_path / "l1.json"
+    assert main(["stats", "--runs", "r1", "--trace-dir", str(tmp_path), "--out", str(out)]) == 0
+    env = json.loads(out.read_text(encoding="utf-8"))["_env"]
+    assert env["cpu_count"] and env["python"]
+
+
 def test_stats_missing_run_returns_3_and_does_not_write(tmp_path):
     out = tmp_path / "l1.json"
     rc = main(["stats", "--runs", "nope", "--trace-dir", str(tmp_path), "--out", str(out)])
