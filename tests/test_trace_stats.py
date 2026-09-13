@@ -106,3 +106,12 @@ def test_baseline_document_carries_basis_and_limitations():
                             {"_rev": "2026-09-13", "_basis": "x"})
     assert doc["_rev"] == "2026-09-13"
     assert doc["_limitations"]  # 局限必须随文件走,不能只在报告里
+
+
+def test_baseline_document_declares_run_to_run_instability():
+    """实测发现:同被测同用例集的两轮,sut 总耗时差近 2×。
+
+    这决定了"墙钟"不能当稳定量用 ⇒ 必须随基线文件声明,否则下游会把它当性能保证。
+    """
+    doc = baseline_document({"by_sut": {}, "runs": []}, {})
+    assert any("轮间" in x for x in doc["_limitations"])

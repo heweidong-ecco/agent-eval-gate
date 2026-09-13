@@ -122,7 +122,10 @@ def baseline_document(merged: dict, meta: dict) -> dict:
     doc["_limitations"] = [
         "非并发、非『一天业务流量模式』、无资源使用峰值(业务方 2026-09-13 定夺不做 live 压测)",
         "样本为单轮(每 sut 1–3 轮)⇒ 高分位不稳健(最近秩法在 n<20 时 p99 即 max)",
-        "trace 未记录被测版本/commit ⇒ 跨轮可比性靠外部记账",
+        "⚠️ **轮间不稳定(实测,原因未查明)**:同一被测 commit、同一 48 条集的两轮,"
+        "`sut.call` 总耗时 96.7s vs 187.0s(逐 case 比值中位数 0.46)⇒ 分布可能双峰,"
+        "**单轮样本不足以代表稳态**;墙钟由此不可当稳定量用(180s 类阈值会误报)",
+        "trace 未记录被测版本/commit(该信息在 `eval/runs/<id>.summary.md` 里)⇒ 跨轮可比性靠对照摘要",
         "T3 回放未做:被测不暴露 tool_calls(实测 0 次)⇒『工具调用』这一环未被验证",
     ]
     return doc
