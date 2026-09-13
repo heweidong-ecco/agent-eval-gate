@@ -21,6 +21,8 @@ from eval_gate.adapters import SutAdapterError, SutErrorCode, get_adapter
 from eval_gate.config import ROOT
 from eval_gate.judge import FakeJudge, Judge, JudgeVerdict, build_item
 from eval_gate.obs import STATUS_DEGRADED, STATUS_ERROR, STATUS_OK, Tracer, digest
+from eval_gate.trace_stats import (MIN_ROOT_MS_FOR_OVERHEAD, overhead_ratio,
+                                        system_error_rate)
 from eval_gate.rules import run_deterministic
 from eval_gate.schema import Case, EvSet
 
@@ -59,7 +61,11 @@ THRESHOLD_FILE = ROOT / "eval" / "阈值.json"
 
 # 兜底(仅在机读阈值文件缺失/损坏时使用)。刻意取**更严**的 0.9:
 # 配置读不到时应"失败即更严",绝不允许缺配置把门**静默放松**(契约 eval/阈值.md 纪律)。
-_FALLBACK_THRESHOLDS = {"l2_task_completion": {"min": 0.9}, "redteam_zero": True}
+_FALLBACK_THRESHOLDS = {"l2_task_completion": {"min": 0.9}, "redteam_zero": True,
+                        # L1(DEC-012 方案 C+E,2026-09-13 采纳):兜底里必须有,
+                        # 否则阈值文件缺这两个键时它们就"不判"了 —— 那是放宽门。
+                        "l1_system_error_rate": {"max": 0.01},
+                        "l1_gate_overhead_ratio": {"max": 0.05}}
 
 
 # 已知阈值键的**形状**校验(缺了它会 `AttributeError` 崩,而不是按文档承诺回落兜底)
@@ -74,6 +80,14 @@ _KNOWN_THRESHOLDS = {
     "judge_human_agreement": lambda v: (isinstance(v, dict)
                                         and isinstance(v.get("min"), (int, float))
                                         and not isinstance(v.get("min"), bool)),
+    # L1(DEC-012):**已接线为阻断项** —— 两个都是"门自身可控"的量。
+    # 墙钟与被测延迟**刻意不接线**:2026-09-13 实测轮间可差 2×,由外部支配 ⇒ 接线必误报。
+    "l1_system_error_rate": lambda v: (isinstance(v, dict)
+                                       and isinstance(v.get("max"), (int, float))
+                                       and not isinstance(v.get("max"), bool)),
+    "l1_gate_overhead_ratio": lambda v: (isinstance(v, dict)
+                                         and isinstance(v.get("max"), (int, float))
+                                         and not isinstance(v.get("max"), bool)),
 }
 
 
@@ -239,6 +253,55 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
     return res, True
 
 
+def l1_gate_verdict(tracer: Tracer | None, thr: dict) -> tuple[dict, list[str]]:
+    """L1 判定(DEC-012 方案 C+E)。返回 `(metrics, blockers)`。
+
+    两个量,**都是「门自身可控」的**:
+    - `system_error_rate` = (`sut.call` + `judge.grade` 的故障率),**排除 `rule.check`**
+      (它的 error = 该 case 未过判据,是**评测结论**不是故障);
+    - `gate_overhead_ratio` = 门自身编排开销占比(根 span 未被直接子 span 覆盖的部分)。
+
+    ⚠️ **不可测 ≠ 通过**:传了 tracer 却拿不到 span(`EVAL_TRACE=0`)⇒ 记阻断项。
+    「不带 tracer = 绕开生产路径」是本项目已有教训(`docs/复盘/2026-09-11-P4-1-过程错误.md` E2)。
+    `tracer is None`(库/单测用法)不算绕开,L1 不适用、不加阻断项。
+    """
+    if tracer is None:
+        return {"measurable": False, "reason": "未传 tracer(库/单测用法);L1 不适用"}, []
+
+    spans = list(tracer.spans)
+    if not spans:
+        return ({"measurable": False, "reason": "trace 关闭或无 span"},
+                ["l1 不可测:观测被关闭(EVAL_TRACE=0)⇒ L1 无法判定 —— "
+                 "**这是绕过口,不是通过**(不带 tracer = 绕开生产路径)"])
+
+    err = system_error_rate(spans)
+    ovh = overhead_ratio(spans)
+    metrics = {"measurable": True, "system_error_rate": err["rate"],
+               "system_error_n": err["n"], "system_error_count": err["n_error"],
+               "gate_overhead_ratio": ovh["ratio"], "root_ms": ovh["root_ms"]}
+
+    blockers: list[str] = []
+    max_err = float((thr.get("l1_system_error_rate") or {}).get("max", 1.0))
+    if err["rate"] is not None and err["rate"] > max_err:
+        blockers.append(
+            f"l1_system_error_rate 超阈: {err['rate']:.4f} > {max_err:.4f}"
+            f"({err['n_error']}/{err['n']} 次调用故障;`rule.check` 不计入)")
+    # ⚠️ 测量地板:极短轮次(离线桩 root≈1.4ms)的占比由噪声支配,不具判别力
+    # ⇒ 照实报出,但不据此拦(否则 CI 的 mini-rag-qa 离线检查会被噪声判红)。
+    overhead_enforced = ovh["root_ms"] >= MIN_ROOT_MS_FOR_OVERHEAD
+    metrics["gate_overhead_enforced"] = overhead_enforced
+    metrics["gate_overhead_note"] = (
+        "" if overhead_enforced else
+        f"root_ms={ovh['root_ms']:.1f} < 地板 {MIN_ROOT_MS_FOR_OVERHEAD:.0f}ms ⇒ "
+        f"占比由测量噪声支配,只记录不判定")
+    max_ovh = float((thr.get("l1_gate_overhead_ratio") or {}).get("max", 1.0))
+    if overhead_enforced and ovh["ratio"] is not None and ovh["ratio"] > max_ovh:
+        blockers.append(
+            f"l1_gate_overhead_ratio 超阈: {ovh['ratio']:.4f} > {max_ovh:.4f} —— "
+            f"⚠️ 这是**门自身**的编排开销(不是被测的问题)")
+    return metrics, blockers
+
+
 def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
              thresholds: dict | None = None, quality_by_sut: dict | None = None,
              tracer: Tracer | None = None) -> RunResult:
@@ -385,6 +448,8 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
         blockers.append(f"redteam_zero 命中: 红队/注入被突破 {redteam_hits} 条(确定性必拦)")
     if completion < min_completion:
         blockers.append(f"l2_task_completion 未达标: {completion:.2f} < {min_completion:.2f}")
+    l1_metrics, l1_blockers = l1_gate_verdict(tracer, thr)
+    blockers += l1_blockers
 
     summary = {
         "total": total, "passed": passed, "failed": failed, "flag": flag,
@@ -392,6 +457,8 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
         # 只观测、不参与阈值判定(见上方注释)。rule_hit_judge_fail > 0 时会打一条 warn 日志。
         "soft_miss_judge_pass": soft_miss_judge_pass,
         "rule_hit_judge_fail": rule_hit_judge_fail,
+        # L1(DEC-012):接线为阻断项;墙钟/被测延迟刻意不在此列(由外部支配,接线必误报)
+        "l1": l1_metrics,
     }
 
     if degraded:
