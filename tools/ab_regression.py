@@ -67,7 +67,36 @@ class JitterJudge(Judge):
         return JudgeVerdict("pass" if ok else "fail", 1.0 if ok else 0.0, ["合成抖动"])
 
 
-def _run_arm(ev, make_judge, n: int) -> list[float]:
+class BudgetExceeded(RuntimeError):
+    """累计 token 达到上限 ⇒ 熔断(中止本实验,但**留痕**)。"""
+
+    def __init__(self, spent: int, cap: int):
+        super().__init__(f"累计 token {spent:,} ≥ 上限 {cap:,}")
+        self.spent, self.cap = spent, cap
+
+
+def budget_exceeded(spent_tokens: int, cap: int | None) -> bool:
+    """累计 token 是否已达上限。`cap is None` ⇒ 不限(不构成熔断)。"""
+    return cap is not None and spent_tokens >= cap
+
+
+class _Budget:
+    """累计 judge 用量并判定熔断。**此前这个工具没有任何累计上限** ——
+    横切原则要求的「token 预算与循环熔断」对它从未实现(2026-09-13 查证)。"""
+
+    def __init__(self, cap: int | None = None):
+        self.cap = cap
+        self.spent = 0
+
+    def add(self, usage: dict | None) -> None:
+        self.spent += int((usage or {}).get("total_tokens") or 0)
+
+    def check(self) -> None:
+        if budget_exceeded(self.spent, self.cap):
+            raise BudgetExceeded(self.spent, self.cap or 0)
+
+
+def _run_arm(ev, make_judge, n: int, *, label: str = "", budget: "_Budget | None" = None) -> list[float]:
     """跑 n 轮,每轮返回该轮 L2 达标率(completion)。
 
     ⚠️ `make_judge(i)` 必须**按轮次**产出独立的 judge。踩过的坑:若每轮都新建
@@ -76,9 +105,15 @@ def _run_arm(ev, make_judge, n: int) -> list[float]:
     (而且表面上"跑通了",极易当成正常结果)。
     """
     rates = []
+    budget = budget if budget is not None else _Budget()
     for i in range(n):
         res = evaluate(ev, judge=make_judge(i))
         rates.append(float(res.summary["completion"]))
+        budget.add(getattr(res, "judge_usage", None))     # 先累加,再报 —— 否则进度行滞后一轮
+        # 逐轮进度 —— 此前跑起来是黑盒(无 trace、无逐轮产物,只能等结束)
+        print(f"[ab] {label}轮 {i + 1}/{n} · completion={rates[-1]:.4f}"
+              f" · 累计 judge token={budget.spent:,}", file=sys.stderr)
+        budget.check()
     return rates
 
 
@@ -124,6 +159,9 @@ def main(argv=None) -> int:
     ap.add_argument("--repeats", type=int, default=10, help="整个实验重复次数(算检出率)")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--live", action="store_true", help="用真实 judge(消耗 token)")
+    ap.add_argument("--max-tokens", type=int, default=None,
+                    help="**熔断**:累计 judge token 达此值即中止(退出码 4,并留痕)。"
+                         "不传 = 不限。live 下强烈建议传(此前无任何累计上限)")
     ap.add_argument("--no-curve", action="store_true",
                     help="跳过 N 曲线,只做单次实验(= 2N 轮)。**live 下这是预算守卫**:"
                          "曲线会把轮数放大约 19.5×(N=20 时 40→820)")
@@ -174,8 +212,23 @@ def main(argv=None) -> int:
     plan = rounds_planned(args.n, args.repeats, args.no_curve)
 
     # ① 单次实验(N 轮/臂)→ 报告主结论
-    rates_a = _run_arm(ev, arm(args.arm_a, args.seed), args.n)
-    rates_b = _run_arm(ev, arm(args.arm_b, args.seed + SEED_OFFSET_B), args.n)
+    budget = _Budget(cap=args.max_tokens)
+    try:
+        rates_a = _run_arm(ev, arm(args.arm_a, args.seed), args.n, label="A",
+                           budget=budget)
+        rates_b = _run_arm(ev, arm(args.arm_b, args.seed + SEED_OFFSET_B), args.n,
+                           label="B", budget=budget)
+    except BudgetExceeded as e:
+        print(f"[ab] ⛔ **熔断**:累计 token {e.spent:,} ≥ 上限 {e.cap:,} —— 已中止(未跑完)",
+              file=sys.stderr)
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(json.dumps(
+            {"tool": "tools/ab_regression.py", "mode": "live" if args.live else "offline-jitter",
+             "warning": WARNING, "evals": {"file": args.evals, "cases": len(ev.cases)},
+             "run": {"aborted": True, "spent_tokens": budget.spent, "max_tokens": args.max_tokens,
+                     "n": args.n, "no_curve": args.no_curve, "commit": _git_commit()},
+             "reason": str(e)}, ensure_ascii=False, indent=1), encoding="utf-8")
+        return 4
     single = ab_verdict(rates_a, rates_b)
 
     # ② N 曲线:每个采样点重复 R 次,算「判为退化」的比例
@@ -212,6 +265,8 @@ def main(argv=None) -> int:
                 "seed": args.seed, "seed_offset_b": SEED_OFFSET_B,
                 # 预算守卫:轮数落盘,事后可核"这轮本该花多少"
                 "no_curve": args.no_curve, "rounds_planned": plan,
+                "aborted": False, "spent_tokens": budget.spent,
+                "max_tokens": args.max_tokens,
                 "elapsed_s": round(time.time() - t0, 2),
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z")},
     }
