@@ -13,8 +13,10 @@ import json
 import os
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
+from eval_gate.bench import env_fingerprint
 from eval_gate.calib import compute_agreement
 from eval_gate.config import judge_config
 from eval_gate.judge import FakeJudge, Judge, build_item
@@ -22,6 +24,7 @@ from eval_gate.obs import STATUS_ERROR, Tracer, read_trace, render_tree
 from eval_gate.report import judge_accounting, write_run
 from eval_gate.runner import default_thresholds, evaluate
 from eval_gate.schema import EvalError, load_evals
+from eval_gate.trace_stats import baseline_document, merge_runs, summarize_run
 
 MODE_TO_QUALITY = {"good": "faithful", "bad": "hallucinate"}
 
@@ -45,6 +48,11 @@ def _parser() -> argparse.ArgumentParser:
     c.add_argument("--threshold", default="eval/阈值.json", help="阈值文件(取 judge_human_agreement.min)")
     c.add_argument("--fail-on-below", action="store_true",
                    help="低于阈值 min 时返回 exit 1(**默认关闭**;是否接进自动门由使用方决定,DEC-008 §5)")
+    s = sub.add_parser("stats", help="从已有 trace 产真实 L1 基线(P4-2,零 token)")
+    s.add_argument("--runs", required=True, help="run_id 列表(逗号分隔)或 glob,如 20260912-*")
+    s.add_argument("--trace-dir", default="eval/runs", help="trace 目录(默认 eval/runs)")
+    s.add_argument("--out", required=True, help="基线 JSON 落盘路径")
+    s.add_argument("--rev", default="", help="写入 _rev(默认取当天)")
     return p
 
 
@@ -264,6 +272,38 @@ def _cmd_calibrate(args) -> int:
     return 1 if (args.fail_on_below and below) else 0
 
 
+def _cmd_stats(args) -> int:
+    """从已有 trace 产机读 L1 基线(P4-2/T2)。**零 token** —— 只读本地 trace。
+
+    找不到 trace ⇒ 返回 3 并打印期望路径:**不静默产出一份空基线**
+    (空基线和"被测很快"在报告里长得一样,那正是本节点要防的事)。
+    """
+    d = Path(args.trace_dir)
+    paths: list[Path] = []
+    for slug in (x for x in str(args.runs).split(",") if x.strip()):
+        hit = sorted(d.glob(f"{slug.strip()}.trace.jsonl"))   # 同时支持精确 run_id 与 glob
+        if not hit:
+            print(f"[eval-gate] 未找到 trace: {d / f'{slug.strip()}.trace.jsonl'}")
+            return 3
+        paths += hit
+    if not paths:
+        print(f"[eval-gate] 未找到任何 trace: {d}")
+        return 3
+
+    records = [summarize_run(p) for p in paths]
+    doc = baseline_document(
+        merge_runs(records),
+        {"_rev": args.rev or date.today().isoformat(),
+         "_basis": "runs=" + ",".join(r["run_id"] for r in records),
+         "_env": env_fingerprint()},
+    )
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"[eval-gate] L1 基线已写入 {out}({len(records)} 轮 · {len(doc['by_sut'])} 个被测)")
+    return 0
+
+
 def _judge_agreement_min(path: str) -> float | None:
     """读阈值里的 `judge_human_agreement.min`(同时认顶层与 `_doc_only` 下的写法)。"""
     try:
@@ -284,6 +324,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_trace(args)
     if args.cmd == "calibrate":
         return _cmd_calibrate(args)
+    if args.cmd == "stats":
+        return _cmd_stats(args)
     return _cmd_run(args)
 
 
