@@ -108,3 +108,58 @@ def test_live_mode_without_judge_config_exits_3(tmp_path):
              "--out", str(tmp_path / "x.json"), env=env)
     assert r.returncode == 3
     assert "EVAL_JUDGE" in (r.stdout + r.stderr)
+
+
+# ── 预算守卫:--no-curve(2026-09-13 加)───────────────────────────
+def test_no_curve_skips_detection_curve_and_reports_round_count(tmp_path):
+    """`--no-curve`:只跑单次实验(`2N` 轮),不做 N 曲线。
+
+    ⚠️ 动机:M2 只需要「N=20/臂」的单次实验,而 N 曲线会把**轮数**放大到
+    `2N + 2·repeats·Σprobes`(N=20 时 **40 → 820 轮**,约 19.5×)。
+    这个开关此前**不存在** —— 照文档直接跑 `--n 20 --live` 会超预算约 20 倍。
+    """
+    out = tmp_path / "ab.json"
+    p = _run("--evals", str(EVALS), "--n", "4", "--repeats", "2",
+             "--no-curve", "--out", str(out))
+    assert p.returncode == 0, p.stderr
+    d = json.loads(out.read_text(encoding="utf-8"))
+    assert d["detection_curve"] == []
+    assert d["run"]["no_curve"] is True
+    assert d["run"]["rounds_planned"] == 8          # 2N = 8
+
+
+def test_rounds_planned_exposes_the_curve_multiplier(tmp_path):
+    """不开 `--no-curve` 时也要能算清总轮数 —— 这就是预算守卫的依据。"""
+    out = tmp_path / "ab.json"
+    p = _run("--evals", str(EVALS), "--n", "4", "--repeats", "2", "--out", str(out))
+    assert p.returncode == 0, p.stderr
+    d = json.loads(out.read_text(encoding="utf-8"))
+    # probes(4) = [2, 4];曲线 = 2·2·(2+4) = 24;合计 8 + 24 = 32
+    assert d["run"]["no_curve"] is False
+    assert d["run"]["rounds_planned"] == 32
+
+
+def test_live_warns_about_curve_multiplier_before_judge_config_check(tmp_path):
+    """`--live` 未加 `--no-curve` 时,**即使 judge 没配好也要先报出轮数与倍数**。
+
+    动机:这条警告是**预算守卫**。若它印在配置检查之后,操作者看不到成本就先退出了。
+    """
+    env = dict(os.environ, EVAL_DOTENV="0")
+    for k in ("EVAL_JUDGE_BASE_URL", "EVAL_JUDGE_API_KEY", "EVAL_JUDGE_MODEL"):
+        env.pop(k, None)
+    p = _run("--evals", str(EVALS), "--n", "20", "--repeats", "10", "--live",
+             "--out", str(tmp_path / "x.json"), env=env)
+    assert p.returncode == 3                       # 没配 judge ⇒ 拒绝跑(不静默冒充)
+    assert "计划轮数 = 820" in p.stderr
+    assert "--no-curve" in p.stderr                # 并把放大的原因说清
+
+
+def test_live_with_no_curve_reports_single_experiment_cost(tmp_path):
+    env = dict(os.environ, EVAL_DOTENV="0")
+    for k in ("EVAL_JUDGE_BASE_URL", "EVAL_JUDGE_API_KEY", "EVAL_JUDGE_MODEL"):
+        env.pop(k, None)
+    p = _run("--evals", str(EVALS), "--n", "20", "--repeats", "10", "--live", "--no-curve",
+             "--out", str(tmp_path / "x.json"), env=env)
+    assert p.returncode == 3
+    assert "计划轮数 = 40" in p.stderr
+    assert "已加 --no-curve" in p.stderr
