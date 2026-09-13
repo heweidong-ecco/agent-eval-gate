@@ -272,3 +272,27 @@ def test_cli_early_failure_with_bad_report_dir_still_returns_3(tmp_path):
     rc = main(["run", "--evals", str(tmp_path / "nope.json"), "--offline",
                "--report-dir", str(blocker)])
     assert rc == 3, f"必须返回契约内的 exit 3(配置错误),实际 {rc}"
+
+
+def test_report_dir_is_a_file_with_valid_evalset_returns_3_not_1(tmp_path, capsys):
+    """`--report-dir` 指向**已存在的文件**、且评测集**正常** ⇒ 必须 exit 3,**不得 exit 1**。
+
+    ⚠️ 2026-09-13 **故障演练**(`tools/fault_drill.sh`)实测暴露的真缺陷:
+    既有的 `test_cli_early_failure_with_bad_report_dir_still_returns_3` 用
+    「**坏评测集** + 坏目录」—— **早退的 exit 3 把这条路径盖住了**。
+    真实场景(评测集正常、只是产物目录不可写)会一直跑到 `report.write`
+    ⇒ `mkdir(exist_ok=True)` 对**文件**仍抛 `FileExistsError` ⇒ **未捕获**
+    ⇒ 进程 exit **1** —— 而 1 在本项目 = 「被拦 / 阻断发布」,
+    于是**一个 IO/路径问题被读成「质量不合格」**(正是那条测试 docstring 警告的误读)。
+
+    ⚠️ 同一个 `finally` 里 **trace** 落盘失败**是**优雅处理的(`cli.py:170`)—— 不对称本身就是线索。
+    """
+    from pathlib import Path
+    mini = Path(__file__).resolve().parents[1] / "eval" / "mini_rag_qa.evals.json"
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x", encoding="utf-8")
+    rc = main(["run", "--evals", str(mini), "--mode", "good", "--offline",
+               "--report-dir", str(blocker)])
+    err = capsys.readouterr().err
+    assert rc == 3, f"IO/配置错误必须是 exit 3,实际 {rc}(exit 1 会被读成质量不合格)"
+    assert "Traceback" not in err, "不得把未捕获异常抛给用户"

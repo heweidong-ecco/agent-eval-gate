@@ -101,8 +101,19 @@ def _cmd_run(args) -> int:
 
         result = evaluate(ev, quality=quality, judge=judge, thresholds=thresholds, tracer=tracer)
         run_id = result.run_id
-        with tracer.span("report.write", kind="CHAIN", dir=str(args.report_dir)):
-            path = write_run(result, args.report_dir, args.evals, judge.label())
+        # ⚠️ 报告落盘失败**必须**判为配置/运行错误(exit 3),**不得**让异常穿出去变成 exit 1。
+        # 2026-09-13 故障演练(`tools/fault_drill.sh`)实测暴露:产物目录指向**已存在的文件**时
+        # `mkdir(exist_ok=True)` 仍抛 `FileExistsError` ⇒ 未捕获 ⇒ 进程 exit **1**,
+        # 而 1 在本项目 = 「被拦/阻断发布」⇒ **一个 IO 问题被读成「质量不合格」**。
+        # (同一 finally 里 trace 落盘失败**已**是优雅处理,见下方 —— 不对称本身就是线索。)
+        try:
+            with tracer.span("report.write", kind="CHAIN", dir=str(args.report_dir)):
+                path = write_run(result, args.report_dir, args.evals, judge.label())
+        except OSError as e:
+            print(f"[eval-gate] 报告落盘失败:{e}", file=sys.stderr)
+            print("[eval-gate] ⇒ 判为**配置/运行错误**(exit 3):"
+                  "产物目录不可写**不是**质量不合格(不要读成 exit 1)", file=sys.stderr)
+            return 3
 
         s = result.summary
         print(f"[eval-gate] run={result.run_id} judge={judge.label()} quality={quality}")
