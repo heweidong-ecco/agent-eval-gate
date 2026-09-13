@@ -163,3 +163,39 @@ def test_live_with_no_curve_reports_single_experiment_cost(tmp_path):
     assert p.returncode == 3
     assert "计划轮数 = 40" in p.stderr
     assert "已加 --no-curve" in p.stderr
+
+
+# ── 熔断与可见性(2026-09-13 补:业务方问起时查证,此前**两者都没有**)──
+def test_max_tokens_zero_trips_the_breaker(tmp_path):
+    """`--max-tokens 0` ⇒ 第一轮后立刻中止。
+
+    动机:本工具此前**没有任何累计 token 上限**。横切原则要求的
+    「token 预算与循环熔断」对它从未实现 —— 一次 N=20 live 跑的最坏上界
+    按算约 1440 万 token,而中途**看不到也拦不住**。
+    """
+    out = tmp_path / "ab.json"
+    p = _run("--evals", str(EVALS), "--n", "6", "--repeats", "1", "--no-curve",
+             "--max-tokens", "0", "--out", str(out))
+    assert p.returncode != 0, "熔断必须让退出码非 0"
+    assert "熔断" in (p.stderr + p.stdout)
+    d = json.loads(out.read_text(encoding="utf-8"))     # 但**要留下痕迹**
+    assert d["run"]["aborted"] is True
+    assert d["run"]["spent_tokens"] == 0
+
+
+def test_generous_max_tokens_lets_run_finish(tmp_path):
+    out = tmp_path / "ab.json"
+    p = _run("--evals", str(EVALS), "--n", "2", "--repeats", "1", "--no-curve",
+             "--max-tokens", "1000000", "--out", str(out))
+    assert p.returncode == 0, p.stderr
+    d = json.loads(out.read_text(encoding="utf-8"))
+    assert d["run"]["aborted"] is False
+
+
+def test_round_progress_is_printed_for_visibility(tmp_path):
+    """逐轮打印进度 —— 此前 A/B 跑起来是个黑盒(无 trace、无逐轮产物)。"""
+    out = tmp_path / "ab.json"
+    p = _run("--evals", str(EVALS), "--n", "2", "--repeats", "1", "--no-curve",
+             "--out", str(out))
+    assert p.returncode == 0, p.stderr
+    assert "轮 1/" in (p.stderr + p.stdout)
