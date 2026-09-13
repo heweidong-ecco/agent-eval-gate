@@ -60,10 +60,26 @@ THRESHOLD_JSON = Path(__file__).resolve().parents[1] / "eval" / "阈值.json"
 
 
 def test_repo_threshold_file_is_wired():
-    """本仓标定值必须真的生效:0.80,不是硬编码的 0.90。"""
+    """本仓标定值必须真的生效:**0.95**(DEC-013,2026-09-13),不是硬编码的兜底值。"""
     thr = default_thresholds()
-    assert thr["l2_task_completion"]["min"] == 0.80
+    assert thr["l2_task_completion"]["min"] == 0.95
     assert thr["redteam_zero"] is True
+
+
+def test_fallback_is_never_looser_than_the_threshold_file():
+    """兜底**永远不得比生效值松** —— 否则"配置读不到"会静默放宽门。
+
+    2026-09-13 发现的真隐患:文件里的 L2 由 0.80 提到 **0.95** 后,兜底若仍停在 0.9,
+    就变成**比生效值松**(读不到配置反而更容易过)—— 直接违反
+    `eval/阈值.md` / `docs/部署.md`「读不到 → 回落更严兜底,绝不放宽门」的承诺。
+    ⇒ 这条把纪律变成结构:改任一侧而不改另一侧,CI 会红。
+    """
+    from eval_gate.runner import _FALLBACK_THRESHOLDS as FB
+    doc = json.loads(THRESHOLD_JSON.read_text(encoding="utf-8"))
+    assert FB["l2_task_completion"]["min"] >= doc["l2_task_completion"]["min"], \
+        "兜底不得比文件松:min 必须 ≥"
+    for k in ("l1_system_error_rate", "l1_gate_overhead_ratio"):
+        assert FB[k]["max"] <= doc[k]["max"], f"兜底不得比文件松:{k}.max 必须 ≤"
 
 
 def test_load_thresholds_strips_underscore_keys(tmp_path):
@@ -77,16 +93,23 @@ def test_load_thresholds_strips_underscore_keys(tmp_path):
 
 
 def test_missing_threshold_file_falls_back_stricter(tmp_path, capsys):
-    """缺配置时**不得静默放宽**:回落更严的 0.9 并告警。"""
+    """缺配置时**不得静默放宽**:回落兜底并告警。
+
+    值绑定兜底常量(不写死字面量)—— "兜底够不够严"由
+    `test_fallback_is_never_looser_than_the_threshold_file` 单独守。
+    """
+    from eval_gate.runner import _FALLBACK_THRESHOLDS as FB
     thr = default_thresholds(tmp_path / "nope.json")
-    assert thr["l2_task_completion"]["min"] == 0.9
+    assert thr["l2_task_completion"]["min"] == FB["l2_task_completion"]["min"]
     assert "兜底" in capsys.readouterr().err
 
 
 def test_corrupt_threshold_file_falls_back_stricter(tmp_path):
+    from eval_gate.runner import _FALLBACK_THRESHOLDS as FB
     p = tmp_path / "bad.json"
     p.write_text("{ not json", encoding="utf-8")
-    assert default_thresholds(p)["l2_task_completion"]["min"] == 0.9
+    assert (default_thresholds(p)["l2_task_completion"]["min"]
+            == FB["l2_task_completion"]["min"])
 
 
 @pytest.mark.parametrize("bad", [
@@ -104,7 +127,10 @@ def test_malformed_threshold_shape_falls_back_stricter(tmp_path, capsys, bad):
     p = tmp_path / "bad.json"
     p.write_text(json.dumps(bad), encoding="utf-8")
     thr = default_thresholds(p)
-    assert thr["l2_task_completion"]["min"] == 0.9, "必须回落更严兜底"
+    # 值与兜底常量绑定(而非写死字面量)—— 真正的"够不够严"由
+    # `test_fallback_is_never_looser_than_the_threshold_file` 守。
+    from eval_gate.runner import _FALLBACK_THRESHOLDS as FB
+    assert thr["l2_task_completion"]["min"] == FB["l2_task_completion"]["min"], "必须回落兜底"
     assert "形状不合法" in capsys.readouterr().err, "应告警,不静默"
 
 

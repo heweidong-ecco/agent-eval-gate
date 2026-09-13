@@ -59,9 +59,14 @@ class RunResult:
 
 THRESHOLD_FILE = ROOT / "eval" / "阈值.json"
 
-# 兜底(仅在机读阈值文件缺失/损坏时使用)。刻意取**更严**的 0.9:
+# 兜底(仅在机读阈值文件缺失/损坏时使用)。**必须不松于生效值**:
 # 配置读不到时应"失败即更严",绝不允许缺配置把门**静默放松**(契约 eval/阈值.md 纪律)。
-_FALLBACK_THRESHOLDS = {"l2_task_completion": {"min": 0.9}, "redteam_zero": True,
+#
+# ⚠️ 2026-09-13(DEC-013):文件里的 L2 由 0.80 提到 **0.95** 后,兜底若仍停在 0.9
+# 就变成**比生效值松** —— 读不到配置反而更容易过。已同步提到 0.95;
+# 并由 `tests/test_runner_e2e.py::test_fallback_is_never_looser_than_the_threshold_file`
+# **结构性地**守住"任一侧改动而不改另一侧 ⇒ CI 红"。
+_FALLBACK_THRESHOLDS = {"l2_task_completion": {"min": 0.95}, "redteam_zero": True,
                         # L1(DEC-012 方案 C+E,2026-09-13 采纳):兜底里必须有,
                         # 否则阈值文件缺这两个键时它们就"不判"了 —— 那是放宽门。
                         "l1_system_error_rate": {"max": 0.01},
