@@ -5,7 +5,7 @@
 
   ✅ 方法 1:单行调用(推荐,每次一行命令)
 
-  claude -p "请先读取 /Users/heweidong/Desktop/Agent-System Workflow/workflow/agent-system-creator/SKILL.md(含 references/ 
+  claude -p "请先读取 /Users/heweidong/Desktop/Product/设计蓝图和总纲/Agent-System Workflow/agent-system-creator/SKILL.md(含 references/ 
   子目录),严格按其 6阶段×12步 工作流执行,并按其输出格式交付。任务:帮我规划一个 AI 客服 Agent 系统"
 
   原理:技能未安装,所以不能自动触发;让 Claude 先读取技能文件并遵循它,效果等同。注意路径含空格,必须用引号包住。
@@ -16,7 +16,7 @@
 
   #按需调用 agent-system-creator 技能(不安装)
   as-agent() {
-    local SKILL="/Users/heweidong/Desktop/Agent-System Workflow/workflow/agent-system-creator"
+    local SKILL="/Users/heweidong/Desktop/Product/设计蓝图和总纲/Agent-System Workflow/agent-system-creator"
     claude -p "先读取 ${SKILL}/SKILL.md 及其 references/ 目录,严格按其中定义的 6阶段×12步
   工作流执行,并按技能要求的输出格式交付。任务:$*"
   }
@@ -28,8 +28,8 @@
 
   ✅ 方法 3:交互式会话中临时挂载(想在一个会话里连续用)
 
-  cd "/Users/heweidong/Desktop/Agent-System Workflow/workflow"
-  claude --add-dir "/Users/heweidong/Desktop/Agent-System Workflow/workflow/agent-system-creator"
+  cd "/Users/heweidong/Desktop/Product/设计蓝图和总纲/Agent-System Workflow"
+  claude --add-dir "/Users/heweidong/Desktop/Product/设计蓝图和总纲/Agent-System Workflow/agent-system-creator"
 
   进入交互会话后再说一句「请遵循 agent-system-creator/SKILL.md 的工作流」,本次会话即可反复使用,退出后不残留安装。
 
