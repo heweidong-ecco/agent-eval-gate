@@ -1,7 +1,7 @@
 #!/bin/sh
 # kb-drift-sentinel:避坑库变动提醒 —— 防止「指针指向已改名/已移动/已过期的知识库」。
 #
-# 动机:避坑库(`知识库/18.Agent避坑库-问题解决策略/`)是**跨项目、可能跨机器同步**的,
+# 动机:避坑库(`Product/agent-pitfalls-kb/`)是**跨项目、可能跨机器同步**的,
 #      而项目里的指针是**写死的路径**。库一旦改名/移动/在别的电脑上增删,指针就会静默失效 ——
 #      这正是「纪律只有文字、没有触发点」的翻版,故按同一原则补一处结构(见避坑库 §1)。
 #
@@ -12,7 +12,7 @@
 # opt-in:设 KB_SENTINEL=1 才生效(注册处已内联设置);可用 KB_AVOID_PITFALLS_DIR 覆盖库路径。
 [ "$KB_SENTINEL" = "1" ] || exit 0
 
-KB="${KB_AVOID_PITFALLS_DIR:-$HOME/Desktop/知识库/18.Agent避坑库-问题解决策略}"
+KB="${KB_AVOID_PITFALLS_DIR:-$HOME/Desktop/Product/agent-pitfalls-kb}"
 ROOT="$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)" || exit 0
 MANIFEST="$ROOT/.claude/.kb-avoid-manifest"
 
