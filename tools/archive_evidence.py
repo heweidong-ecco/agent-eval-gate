@@ -29,8 +29,13 @@ TOP_ALLOW = ("trace_id", "span_id", "parent_span_id", "name", "kind",
              "start_time_ms", "duration_ms", "status")
 
 #: attributes 白名单 —— 结构字段;凡可能含自然语言的一律不收
+#: ⚠️ `http_status` / `last_error`(2026-09-14 加)是**重试可见性**字段:
+#:   重试只写 stderr、不落盘,span 是唯一会进 git 的地方 ⇒ 滤掉它们
+#:   就等于"这轮到底有没有重试"在 git 里**永远查不到**(见 `DEC-015 §7` 同族的记录缺口)。
+#:   两者都**不含自然语言**(HTTP 状态码 / 我方错误码枚举名),故可入白名单。
 ATTR_ALLOW = ("case_id", "sut", "passed", "verdict", "attempts",
-              "finish_reasons", "judge", "module", "mode", "deterministic_only")
+              "finish_reasons", "judge", "module", "mode", "deterministic_only",
+              "http_status", "last_error")
 
 
 def excerpt_line(raw: dict) -> dict:

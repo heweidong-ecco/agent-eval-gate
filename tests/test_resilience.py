@@ -9,6 +9,7 @@ R0 前的缺陷:judge 抛异常会穿出 evaluate → CLI 三层无捕获 → �
 本文件同时充当 R0 的验收证据 —— 含**离线故障注入**(judge 端点指向不可达地址)。
 全程离线,不发真实网络、不需任何密钥。
 """
+import io
 import json
 
 import pytest
@@ -208,6 +209,80 @@ def test_retries_give_up_and_raise_original_error(monkeypatch):
         _call(_case(1, RETRY_SUT))
     assert e.value.code is SutErrorCode.E_SUT_TIMEOUT
     assert len(counter) == 3, "用尽后原样上抛"
+
+
+# ---- 重试**可见性**:让"这轮到底重试过没有"在跑完之后还查得到(2026-09-14)----
+#
+# 动机(「轮间 2× 延迟」悬案复核时发现的**记录缺口**):
+#   重试**只**出现在 `tracer.log("warn","sut","retry", …)` —— 而 `Tracer.log()`
+#   **只写 log_stream、不落盘**(`obs.py:244`),`*.trace.jsonl` **只有 span、没有日志行**。
+#   ⇒ **一轮跑完,就再也查不出它重试过没有。**
+#   ⇒ 后果很具体:`sut.call` 全部 `status=ok` **推不出"没重试"** ——
+#      **重试之后成功的那条,同样是 `ok`**。而「每条都多吃一次退避重试」恰好是
+#      「+1.88 s/条的加性常量」的形状 ⇒ 这一种解释**曾经无法被排除,原因纯粹是记录不够**。
+#   修法照抄 **judge 侧早已有的先例**(`runner.py:244` 把 `attempts`/`finish_reasons` 记进 span):
+#      把 `attempts` / 末次错误码 / HTTP 状态写进 **`sut.call` span**(那才是会落盘的地方)。
+
+def _diag(ad):
+    return getattr(ad, "last_diagnostics", None)
+
+
+def test_retried_call_exposes_attempts(monkeypatch):
+    """重试后成功 → 诊断留下 **attempts=2** + 末次错误码与 HTTP 状态。"""
+    counter = _flaky(monkeypatch, fail_times=1, code=SutErrorCode.E_SUT_5XX, status=503)
+    ad = REGISTRY[RETRY_SUT]()
+    assert _sut_call_with_retry(ad, _case(1, RETRY_SUT)).answer == "ok"
+    assert len(counter) == 2, "前置条件:确实重试过一次"
+    d = _diag(ad)
+    assert d is not None, "适配器上必须留下诊断(否则重试不可见)"
+    assert d["attempts"] == 2
+    assert d["last_error"] == "E_SUT_5XX"
+    assert d["http_status"] == 503
+
+
+def test_first_try_success_reports_one_attempt(monkeypatch):
+    """**没重试也要有诊断**:`attempts=1` —— "空白"与"1 次"必须可区分。
+
+    (只记"重试时"会退回同一个毛病:看不到 = 无法区分"没重试"与"没记录"。)
+    """
+    _flaky(monkeypatch, fail_times=0, code=SutErrorCode.E_SUT_5XX, status=503)
+    ad = REGISTRY[RETRY_SUT]()
+    _sut_call_with_retry(ad, _case(1, RETRY_SUT))
+    d = _diag(ad)
+    assert d is not None and d["attempts"] == 1
+    assert d["last_error"] is None, "一次就成功 ⇒ 没有末次错误"
+
+
+def test_failed_call_still_exposes_attempts(monkeypatch):
+    """重试**用尽后抛错** → 诊断**仍要留下** —— 失败路径恰恰最需要它。"""
+    _flaky(monkeypatch, fail_times=99, code=SutErrorCode.E_SUT_TIMEOUT)
+    ad = REGISTRY[RETRY_SUT]()
+    with pytest.raises(SutAdapterError):
+        _sut_call_with_retry(ad, _case(1, RETRY_SUT))
+    d = _diag(ad)
+    assert d is not None, "抛错路径也必须留下诊断"
+    assert d["attempts"] == 3, "总尝试 = 1 + SUT_RETRIES(2)"
+    assert d["last_error"] == "E_SUT_TIMEOUT"
+
+
+def test_attempts_reach_the_span_so_it_survives_the_run(monkeypatch):
+    """**端到端**:attempts 必须落到 `sut.call` **span** 上 —— 那才是会落盘的地方。
+
+    只写 stderr 等于没写(`Tracer.log` 不落盘、`trace.jsonl` 只有 span)。
+    这条同时也回答悬案:「重试过的那条 ≠ 没重试的那条」在产物里**可分辨**。
+    """
+    from eval_gate.obs import Tracer
+    _flaky(monkeypatch, fail_times=1, code=SutErrorCode.E_SUT_5XX, status=503)
+    tr = Tracer(log_stream=io.StringIO())
+    ev = EvSet(version=1, threshold_ref="eval/阈值.md",
+               cases=[_case(1, RETRY_SUT), _case(2, RETRY_SUT)])
+    evaluate(ev, judge=FakeJudge(), thresholds=default_thresholds(), tracer=tr)
+
+    spans = {s.attributes.get("case_id"): s for s in tr.spans if s.name == "sut.call"}
+    assert set(spans) == {1, 2}, "两条 case 都该有 sut.call span"
+    assert spans[1].attributes.get("attempts") == 2, "重试过的那条必须记 attempts=2"
+    assert spans[2].attributes.get("attempts") == 1, "没重试的记 1(空白与 1 必须可区分)"
+    assert spans[1].status == "ok", "重试后成功 ⇒ status 仍是 ok(**正是它掩盖了重试**)"
 
 
 def test_judge_timeout_is_retried_once():

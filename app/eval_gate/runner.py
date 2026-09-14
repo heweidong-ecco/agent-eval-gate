@@ -40,6 +40,30 @@ def _mark(sp, status: str, code: str | None = None, msg=None) -> None:
         sp.error = {"code": code, "msg": str(msg)[:200]}
 
 
+def _record_sut_diagnostics(sp, adapter) -> None:
+    """把被测调用的**重试可见性**写进 `sut.call` span(2026-09-14)。
+
+    为什么必须写进 **span**:重试原本只出现在 `tracer.log("warn","sut","retry", …)`,
+    而 `Tracer.log()` **只写 log_stream、不落盘**(`obs.py:244`),`*.trace.jsonl`
+    **只有 span、没有日志行** ⇒ **一轮跑完就查不出它重试过没有**。
+    而 `status=ok` **推不出"没重试"** —— **重试后成功的同样是 `ok`**。
+    照抄 judge 侧先例(`runner.py` 的 `jsp.attributes["attempts"]`)。
+
+    ⚠️ 只写**非语言**字段(计数 / 枚举名 / HTTP 状态码),**不含任何被测文本** ——
+    与 `observability/日志-schema.md:1` 及 `需求基线.md:149` 的脱敏纪律一致。
+    """
+    if sp is None:
+        return
+    d = getattr(adapter, "last_diagnostics", None)
+    if not d:
+        return
+    sp.attributes["attempts"] = d.get("attempts")
+    if d.get("http_status") is not None:
+        sp.attributes["http_status"] = d["http_status"]
+    if d.get("last_error") is not None:
+        sp.attributes["last_error"] = d["last_error"]
+
+
 @dataclass
 class RunResult:
     run_id: str
@@ -163,15 +187,36 @@ def _sut_call_with_retry(adapter, case: Case, tracer: Tracer | None = None):
     - 其余(`4XX` 非 429 / `AUTH` / `QUOTA` / `BAD_RESPONSE`)→ **不重试,fail-fast**。
 
     最后仍失败则原样上抛,由调用方按 E5 既有语义处理(记 fail / 配额熔断)。
+
+    ⚠️ **诊断必须留在适配器上**(`adapter.last_diagnostics`,2026-09-14):
+    重试**只**出现在上面的 `tracer.log(...)` 里,而 `Tracer.log()` **只写 log_stream、不落盘**
+    (`obs.py:244`),`*.trace.jsonl` **只有 span、没有日志行** ⇒ **一轮跑完就再也查不出它重试过没有**。
+    后果很具体:`sut.call` 全部 `status=ok` **推不出"没重试"** —— **重试之后成功的那条同样是 `ok`**,
+    而「每条都多吃一次退避」恰好是「+1.88 s/条的加性常量」的形状(见 D-18 的悬案)。
+    ⇒ 把尝试次数与末次错误记进 **span**(会落盘、会进归档),照抄 judge 侧先例(`runner.py:244`)。
+    **无论成功或抛错都要留** —— 失败路径恰恰最需要它。
     """
     attempt = 0
+    last_error: str | None = None
+    last_status: int | None = None
+
+    def _record(ok_status: int | None) -> None:
+        """把本次调用的诊断留在适配器上(供 `sut.call` span 读取)。"""
+        setattr(adapter, "last_diagnostics", {
+            "attempts": attempt + 1,               # 总尝试 = 失败次数 + 最后一次
+            "http_status": ok_status if ok_status is not None else last_status,
+            "last_error": last_error,              # 末次失败的错误码;一次就成功则 None
+        })
+
     while True:
         try:
-            return adapter.run_case(case)
+            out = adapter.run_case(case)
         except SutAdapterError as e:
+            last_error, last_status = e.code.name, e.status
             rate_limited = e.code is SutErrorCode.E_SUT_4XX and e.status == 429
             retryable = e.code in (SutErrorCode.E_SUT_TIMEOUT, SutErrorCode.E_SUT_5XX) or rate_limited
             if not retryable or attempt >= SUT_RETRIES:
+                _record(None)
                 raise
             delay = SUT_RATE_LIMIT_BACKOFF_S if rate_limited else SUT_BACKOFF_S * (2 ** attempt)
             if tracer is not None:
@@ -181,6 +226,9 @@ def _sut_call_with_retry(adapter, case: Case, tracer: Tracer | None = None):
                            status=STATUS_DEGRADED)
             time.sleep(delay)
             attempt += 1
+        else:
+            _record((out.meta or {}).get("http_status"))
+            return out
 
 
 def _expected_dict(case: Case) -> dict:
@@ -357,13 +405,16 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
             if quality_by_sut and case.sut in quality_by_sut:
                 adapter_kw = {"quality": quality_by_sut[case.sut]}
             with _span(tracer, "sut.call", kind="AGENT", case_id=case.id, sut=case.sut) as ssp:
+                _adapter = None      # 先置空:get_adapter 自身抛错时,except 里也要能安全取诊断
                 try:
                     _adapter = get_adapter(case.sut, **adapter_kw)
                     if case.sut not in sut_seen:            # DEC-016:每个 sut 只记一次
                         sut_seen[case.sut] = sut_identity(_adapter)
                     output = _sut_call_with_retry(_adapter, case, tracer)
+                    _record_sut_diagnostics(ssp, _adapter)
                 except SutAdapterError as e:
                     _mark(ssp, STATUS_ERROR, e.code.name, e)
+                    _record_sut_diagnostics(ssp, _adapter)
                     case_results.append({
                         "id": case.id, "module": case.module, "deterministic_only": case.checks.deterministic_only,
                         "judge_used": False, "verdict": "fail", "score": 0.0,
