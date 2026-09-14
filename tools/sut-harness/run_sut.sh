@@ -11,7 +11,7 @@
 # 退出码:0 = 就绪且**能力探针通过**;1 = 起不来;2 = 起来了但答不了(见 README §陷阱)
 set -euo pipefail
 
-SUT_REPO="${EVAL_SUT_REPO:-/Users/heweidong/Desktop/ai-learning/重点教学内容/01.FastAPI RAG Agent}"
+SUT_REPO="${EVAL_SUT_REPO:-/Users/heweidong/Desktop/Product/fastapi-rag-agent}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE="${EVAL_SUT_IMAGE:-my-fixed-name-api}"
 CONTAINER="${EVAL_SUT_CONTAINER:-rag-api-eval}"
