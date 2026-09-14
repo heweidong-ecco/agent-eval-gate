@@ -72,7 +72,19 @@
 | `hard_passed` | **硬层**(`must_refuse` / `answer_not_contains` / 空回答)是否全过 —— 判分器**不可翻案** |
 | `soft_missed` | **软层**(`answer_contains`)是否有未命中 —— 由判分器定夺 |
 | `passed` | 字面全过 = `hard_passed ∧ ¬soft_missed`(**既有语义,未改**) |
-| `hits` | 报告文案(硬层失败原因 + 软层未命中提示) |
+| `issues` | **问题清单**(硬层失败原因 + 软层未命中提示)—— 报告文案 |
+
+> ⚠️ **`issues` 原名 `hits`(2026-09-14 改名,DEC-015 / 签核 D-19)**。改名的理由:
+> 里面装的**全是问题**(「被测无输出」「应拒答却输出了实质内容」「命中禁现词」「未命中任一期望关键点」),
+> 却叫"命中" —— **名字与内容方向相反**,且其中一条文案带"命中"、另一条带"未命中",单看名字推不出方向。
+>
+> **两件事必须一起记住**:
+> 1. **旧产物不可直接比**:`eval/runs/*.local.json` 在本日之前写的是 `hits`,之后写 `issues`
+>    ⇒ 跨该日期的产物**字段名不同**,脚本按 `hits` 取值会**静默取空**(与 `docs/部署.md` 的可比性纪律同源)。
+> 2. **判分器入参的键仍是 `hits`**(`contracts/评测-judge.md:25`)—— **这是刻意保留的**:
+>    该 dict 会被**原样 JSON 化**塞进判分器的 user message ⇒ 改它 = 改判分器输入 ⇒ 须跑真实回归。
+>    ⇒ 它的改名并入 `DEC-015` **方案 B**(待报备预算)。**别"顺手"一起改**:
+>    `tests/test_deterministic_naming.py::test_judge_input_key_is_still_hits` 会红。
 
 **合并规则**:`verdict = pass ⟺ hard_passed ∧ judge 判 pass`。
 `judge` 不可用时(直接调用 `_grade_case` 且 `judge=None` 的离线精简路径),确定性层为
