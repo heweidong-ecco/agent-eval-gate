@@ -25,6 +25,11 @@ class Judge:
   "deterministic": {"passed": true, "hits": []}   // E3 结果(供参照,非替换)
 }
 ```
+> ⚠️ **这里的键 `hits` 是"冻结"的(2026-09-14 备注,DEC-015 / 签核 D-19)**:
+> 本 dict 会被**原样 JSON 化**拼进 user message(`judge.py:234`)⇒ **它是"判分器输入"的一部分**。
+> 报告面同一个字段已于本日改名为 `issues`(`评测-report.md`),但**这一面刻意不动** ——
+> 改键名 = 改判分器输入 ⇒ 按本仓纪律须跑真实回归(≈3 万 token,`DEC-015` 方案 B,待报备)。
+> ⇒ **不要**为了让两处名字一致而改它;`tests/test_deterministic_naming.py` 有两条守卫盯着这一面。
 - 上下文纪律(成本/截断):入参有 `max_tokens`/长度上限,超长被测回答按 E5 截断策略进 judge(`需求基线.md` §8-W1 上下文溢出风险)。
 
 ## 判分出参(JudgeVerdict · 结构化,必须可解析)

@@ -204,7 +204,7 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
     res: dict[str, Any] = {
         "id": case.id, "module": case.module, "deterministic_only": False,
         "deterministic": {"passed": rule.passed, "hard_passed": rule.hard_passed,
-                          "soft_missed": rule.soft_missed, "hits": rule.hits},
+                          "soft_missed": rule.soft_missed, "issues": rule.issues},
         "answer": answer, "sources": sources,
     }
     if judge is None:
@@ -215,12 +215,18 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
         res["judge_used"] = False
         res["verdict"] = "pass" if rule.passed else "fail"
         res["score"] = 1.0 if rule.passed else 0.0
-        res["reasons"] = list(rule.hits)
+        res["reasons"] = list(rule.issues)
         res["evidence_refs"] = []
         return res, False
 
+    # ⚠️ **这里的键名 `hits` 是刻意保留的**(DEC-015 / 签核 D-19)——
+    #    judge.py:234 会把这个 dict **原样 JSON 化**塞进判分器的 user message,
+    #    所以**改这个键 = 改判分器输入**(⇒ 按本仓纪律须跑真实回归,≈3 万 token)。
+    #    因此本轮只改了**报告面**的键名(`hits`→`issues`),**判分器这一面不动**;
+    #    它的改名并入 DEC-015 方案 B(B 本来就要跑回归,一次覆盖两处)。
+    #    ⚠️ 别"顺手"把它一起改 —— `tests/test_deterministic_naming.py` 会红,那是提醒你先报备预算。
     item = build_item(case.id, case.input.get("question", ""), _expected_dict(case),
-                      answer, sources, {"passed": rule.passed, "hits": rule.hits})
+                      answer, sources, {"passed": rule.passed, "hits": rule.issues})
     judge_label = getattr(judge, "label", lambda: "unknown")()
     with _span(tracer, "judge.grade", kind="LLM", case_id=case.id, judge=judge_label) as jsp:
         try:
@@ -256,7 +262,7 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
     else:
         res["verdict"] = "fail"
     res["score"] = jv.score if res["verdict"] == "pass" else 0.0
-    res["reasons"] = list(rule.hits) + list(jv.reasons)
+    res["reasons"] = list(rule.issues) + list(jv.reasons)
     res["evidence_refs"] = list(jv.evidence_refs)
     res["labels"] = list(jv.labels)
     return res, True
@@ -411,9 +417,9 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
                             rsp.status = STATUS_ERROR
                 case_results.append({
                     "id": case.id, "module": case.module, "deterministic_only": True,
-                    "deterministic": {"passed": ok, "hits": rule.hits},
+                    "deterministic": {"passed": ok, "issues": rule.issues},
                     "judge_used": False, "verdict": "pass" if ok else "fail",
-                    "score": 1.0 if ok else 0.0, "reasons": list(rule.hits),
+                    "score": 1.0 if ok else 0.0, "reasons": list(rule.issues),
                     "evidence_refs": [], "answer": output.answer, "sources": output.sources,
                     "refused": output.refused,
                 })
