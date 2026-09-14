@@ -31,6 +31,8 @@ def _write_trace(path: Path) -> Path:
         {"trace_id": "t", "span_id": "s1", "parent_span_id": "root", "name": "sut.call",
          "kind": "AGENT", "start_time_ms": 2.0, "duration_ms": 600.0, "status": "ok",
          "attributes": {"case_id": 1, "sut": "fastapi-rag",
+                        # 重试可见性(2026-09-14):必须**活到归档里** —— 见下面的专门用例
+                        "attempts": 2, "http_status": 503, "last_error": "E_SUT_5XX",
                         # ⚠️ 敏感:必须被剥掉
                         "answer": "被测答案原文,绝不该进 git"}},
         {"trace_id": "t", "span_id": "j1", "parent_span_id": "root", "name": "judge.grade",
@@ -94,3 +96,24 @@ def test_missing_source_returns_3(tmp_path):
     """源 trace 不存在 ⇒ exit 3(不静默产出空归档)。"""
     assert _run("--trace", str(tmp_path / "没有.jsonl"),
                 "--out", str(tmp_path / "o.jsonl")).returncode == 3
+
+
+def test_excerpt_keeps_retry_visibility_fields(tmp_path):
+    """**重试可见性字段必须活到归档里** —— 归档是唯一进 git 的证据。
+
+    动机(`tests/test_resilience.py` 同名段有全貌):重试只写 stderr、**不落盘**,
+    `trace.jsonl` 只有 span。⇒ 若归档白名单把 `attempts`/`http_status`/`last_error`
+    滤掉,"**这轮到底有没有重试**"就**在 git 里永远查不到** —— 而这正是
+    「轮间 2× 延迟」悬案剩下的那一步。**记了但传不到 git = 等于没记。**
+    """
+    trace = _write_trace(tmp_path / "r1.trace.jsonl")
+    out = tmp_path / "r1.spans.jsonl"
+    assert _run("--trace", str(trace), "--out", str(out)).returncode == 0
+
+    sut = json.loads([l for l in out.read_text(encoding="utf-8").splitlines()
+                      if json.loads(l)["name"] == "sut.call"][0])
+    attrs = sut["attributes"]
+    assert attrs.get("attempts") == 2, "归档把 attempts 滤掉了 ⇒ 重试在 git 里不可见"
+    assert attrs.get("http_status") == 503
+    assert attrs.get("last_error") == "E_SUT_5XX"
+    assert "answer" not in attrs, "放宽白名单不得放走答案原文"
