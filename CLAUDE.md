@@ -248,6 +248,14 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
   > **规则向前生效、不追溯**:扩范围前的历史提交会被 `check_gate_bypass.py` 追溯标记,CI 用 base/before 天然限定为新提交。
   > 若确为纯注释/无行为变化,走**带理由的豁免** `[no-test: <理由>]`(裸标记不再放行)—— 本仓 `bc23a13` 即为一次活例。
 - **门禁硬化已落地(2026-09-11 凌晨,8 个 commit)**:skills 三层结构(锚点对应表 → hook 哨兵 → CI 检查)+ **门禁左移**(`impl-guard.sh`,PreToolUse ask)+ **门 1/门 2**(commit-msg:认实现先于测试 + 未调用 `test-driven-development` 即拒提交)。**盲测实证 2/2 复现**:两个空上下文子 Agent 均被门 1/门 2 拦下,并**主动调用 `test-driven-development` 回退重做**。策略沉淀在 `~/Desktop/Product/agent-pitfalls-kb/` 01·02(§4.9)·03。
+  > ⚠️ **2026-09-16 强度更正(门 2)—— 如实标,不改实现**:门 2 的判据读 `.claude/traces/latest.json` 的
+  > `skills`,而那是**会话累计**字段 ⇒ **开头调一次,之后本会话所有提交永久满足**。
+  > 实测(2026-09-15 会话):`skill_calls=4`(TDD 只在早期调 1 次)/ `bash=208` / `edit=38`,
+  > TDD 那 1 次之后有 **4 个编码任务**(含改判分器输入契约的 A2)一次没调 —— **门 2 全程一次未响**。
+  > ⇒ **它的真实强度 = 「半硬:判据是会话级」,不是"硬"**;`A2-R5` 要求强度如实标注。
+  > 决策与方案见 **`docs/decisions/DEC-020-*`**;已进避坑库 **`A2-R15`**(门禁判据不得锚在累计状态上)。
+  > ⚠️ **本仓这一行原标「门 1/门 2 …**盲测实证 2/2 复现**」—— 那说的是**拦得住"从没调过"**的情形,
+  > **没说**"调过一次之后还拦不拦得住"。**两件事,别读成一件。**
 - 进度:阶段1/2 **业务方逐条签核 D-1..D-9(2026-09-10)**;阶段3 P3-1 首跑 `app/eval_gate/` E1–E7 竖切 + fastapi-rag 适配器 + CI 示例,`pytest` 47 passed(离线零外网),good→exit0 / bad→exit1 被拦。真实被测:`01.FastAPI RAG Agent`(切 DeepSeek,commit `36aa291`)。
 - **P3 收口顺序已签核(D-10a..D-10h,2026-09-10)** —— grilling 定调压测门通过后修订 D-9:顺序 = **R0 → R2a → R1 → R2b → R3 → R4**;R3 升级为 **R4 硬前置**;契约补丁三处。过程数据 `notes/grilling/P3-1优先级-2026-09-10.md`,签核 `docs/decisions/定调复核-签核记录.md`。
 - **阶段门纪律**:gate-review 出建议、终裁 = 业务方签核(本指针/节点 ✔ 均以此为准,不再自评 PASS)。
