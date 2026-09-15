@@ -23,6 +23,10 @@ build/
 eval/runs/*.local.json
 eval/runs/*.trace.jsonl
 
+# 被测自证文件(run_sut.sh 每次运行重新生成 ⇒ 提交只会产生噪音;
+# 它是"当前被 serve 的代码是谁"的**本地**交接物,不是某次评测的产物)
+eval/runs/.sut-harness.env
+
 # 观测本地后端数据(如 Phoenix/Jaeger 本地存储)
 observability/.local/
 *.db
