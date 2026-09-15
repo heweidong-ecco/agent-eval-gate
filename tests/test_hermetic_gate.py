@@ -25,7 +25,7 @@ BAD_TEST = ("from pathlib import Path\n"
             "    assert list((ROOT / 'runs').glob('*.jsonl')), '本地没有产物 ⇒ 必红'\n")
 
 
-def _mk_repo(tmp_path: Path, bad: bool) -> Path:
+def _mk_repo(tmp_path: Path, bad: bool, extra_test: str | None = None) -> Path:
     repo = tmp_path / "repo"
     (repo / "tests").mkdir(parents=True)
     (repo / "app" / "eval_gate").mkdir(parents=True)     # ③ 自证步骤要能 import 到它
@@ -35,6 +35,8 @@ def _mk_repo(tmp_path: Path, bad: bool) -> Path:
     (repo / "tests" / "test_ok.py").write_text(GOOD_TEST, encoding="utf-8")
     if bad:
         (repo / "tests" / "test_bad.py").write_text(BAD_TEST, encoding="utf-8")
+    if extra_test:
+        (repo / "tests" / "test_extra.py").write_text(extra_test, encoding="utf-8")
     env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.invalid",
                GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.invalid")
     for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
@@ -82,3 +84,33 @@ def test_checker_self_verifies_which_tree_it_imported(tmp_path):
     line = next(ln for ln in r.stdout.splitlines() if "✅ 用的是" in ln)
     assert str(ROOT / "app") not in line, f"它导入了本仓的代码 ⇒ 自证无效:{line}"
     assert "/app/eval_gate/__init__.py" in line, line
+
+
+# ── 临时树必须**像真 clone 一样有索引**(2026-09-15 实证)──────────────────────
+# 缘起:`git archive HEAD | tar -x` + `git init` **不会**填充索引 ⇒
+# 任何用 `git ls-files` 判断"文件在不在 git 里"的检查,在临时树里都看到**空仓**。
+# 而 CI 是**真 clone**,索引是满的 ⇒ 这类检查**CI 绿、自检红**,自检在**假报不密闭**。
+#
+# ⚠️ 这不是"某条测试太依赖环境",而是**自检脚本与它自己声明的目标不符**:
+#    脚本第 39 行写"对齐 CI 的 clone",而真 clone 的索引是满的。
+# 判据:一个**只用 git 跟踪文件**的测试,在自检里必须**通过**。
+
+INDEX_TEST = (
+    "import subprocess\n"
+    "from pathlib import Path\n"
+    "ROOT = Path(__file__).resolve().parents[1]\n"
+    "def test_index_is_populated_like_a_clone():\n"
+    "    out = subprocess.run(['git', 'ls-files'], cwd=str(ROOT),\n"
+    "                         capture_output=True, text=True)\n"
+    "    assert out.stdout.strip(), '临时树里 git 索引是空的 —— 那不像 CI 的 clone'\n"
+    "    assert 'pyproject.toml' in out.stdout\n"
+)
+
+
+def test_temp_tree_has_a_populated_index_like_a_real_clone(tmp_path):
+    """临时树的索引必须**非空** —— 否则用 `git ls-files` 的检查会被它误判。"""
+    repo = _mk_repo(tmp_path, bad=False, extra_test=INDEX_TEST)
+    r = _run_checker(repo)
+    assert r.returncode == 0, (
+        "自检把「索引为空的临时树」当成了真实环境 ⇒ 假报不密闭\n"
+        f"stdout={r.stdout!r}\nstderr={r.stderr!r}")
