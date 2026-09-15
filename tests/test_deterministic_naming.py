@@ -1,20 +1,27 @@
-"""DEC-015(签核 D-19)· 确定性层结论的字段命名:`hits` → `issues`。
+"""DEC-015(签核 D-19 / D-24)· 确定性层结论的两个消费面。
 
 **本模块存在的理由 —— 一个边界**:
 
-同一份确定性结论有**两个消费面**,而它们**可以各自独立改名**(是两处独立字面量):
+同一份确定性结论有**两个消费面**,而它们**可以各自独立处置**(是两处独立字面量):
 
-| 面 | 位置 | 改名的后果 |
+| 面 | 位置 | 处置 |
 |---|---|---|
-| ① **报告面**(进 `eval/runs/*.local.json` 的 case 结果) | `runner.py:207` / `runner.py:414` | 只我们自己读 ⇒ **安全** |
-| ② **判分器入参**(发给 judge 的 user message) | `runner.py:223` → `judge.py:234` **原样 JSON 化** | **改了 = 改 judge 输入** ⇒ 按本仓纪律须跑真实回归(≈3 万 token) |
+| ① **报告面**(进 `eval/runs/*.local.json` 的 case 结果) | `runner.py:207` / `runner.py:414` | **已改名** `hits` → `issues`(A-safe,2026-09-14) |
+| ② **判分器入参**(发给 judge 的 user message) | `runner.py` → `judge.py` **原样 JSON 化** | **已整个去掉**(A2 / 方案 B1,**2026-09-15,收尾批次 D-24**;跑了真实回归) |
 
-字段名 `hits` 与其内容(**全是问题**)方向相反,该改;但 ② 一改就不是"零行为变化"了。
-⇒ 决策:**本次只改 ①**,② 并进方案 B(B 本来就要跑回归,一次覆盖两处)。
+### ② 为什么最后是"去掉"而不是"改名"
 
-⇒ 因此本模块**两头都钉**:① 必须已改名;② **必须还没改** —— 防未来有人"顺手一起改",
-   把一件零 token 的事悄悄变成一件需要回归的事(这正是本仓反复复盘的那类错误:
-   改动的影响面**没有出现在改动的人眼前**)。
+`DEC-015 §1.2` 三条依据(均由代码支撑):**硬层结论对 judge 毫无用处**
+(硬层不过时 `verdict` 直接判 fail,**judge 的意见被覆盖**)· **会锚定**
+(看到 `{"passed": false, ...}` 被引导向"这条有问题",而 `DEC-004` 的设计恰是**软层由 judge 独立判断**)·
+**字段未解释 + 名字还反向**(未解释的字段本就该最小化)。
+
+⇒ 处置不是"把名字改对",而是**把这个字段从判分器输入里拿掉**。
+
+### 本模块的作用:把契约**双向**钉住
+
+A-safe 时期这里钉的是「② 必须**没**改」;现在是「② 必须**不在**」。
+**这不是守卫松了,是契约变了** —— 原先守"别顺手改",现在守"**别顺手加回来**"。
 """
 import json
 from pathlib import Path
@@ -125,35 +132,56 @@ def test_report_side_uses_issues(run_both):
     assert checked > 0, "没有条目被检查到,用例失去意义"
 
 
-def test_judge_input_key_is_still_hits(run_both):
-    """**守卫**:判分器入参的键**仍是 `hits`** —— 本轮**刻意未改**(见模块 docstring)。
+def test_judge_input_has_no_deterministic_field(run_both):
+    """**守卫(A2 后的新契约)**:判分器入参**根本没有** `deterministic`。
 
-    改它 = 改 judge 的 user message = 改判分器输入 ⇒ 必须跑真实回归(DEC-015 方案 B)。
-    若有人把它一起改了,这条会红 —— 那是**提醒你去报备预算并跑回归**,不是让你改这条断言。
+    与 A-safe 时期那条守卫**相反** —— 那时它必须**在**且键名冻结;现在它必须**不在**。
+    若有人把它加回来,这条会红 —— 那是提醒你:`DEC-015 §1.2` 的三条依据**仍然成立**
+    (硬层结论对 judge 无用 / 会锚定 / 未解释字段),加回来等于把那个问题重新引入。
     """
     _, judge = run_both()
     assert judge.items, "本轮没有调用判分器,用例失去意义"
     for item in judge.items:
-        d = item["deterministic"]
-        assert "hits" in d, (
-            "判分器入参的键被改了 —— 这属于 DEC-015 方案 B,须先报备预算并跑 eval 回归"
+        assert "deterministic" not in item, (
+            "判分器入参又出现了 deterministic —— DEC-015 方案 B1 已把它整个去掉(签核 D-24)"
         )
-        assert "issues" not in d, "判分器入参不该出现新名(那是方案 B 的范围)"
 
 
-def test_judge_user_message_bytes_unchanged_by_this_rename(run_both):
-    """**端到端守卫**:判分器**真正收到的那串 JSON 文本**在本次改名前后逐字不变。
+def test_build_item_omits_deterministic():
+    """`build_item` 是判分器入参的唯一构造器 ⇒ 它**不得**产出该字段。
 
-    上面那条只看 `item` 的字典键;而 `judge.py:234` 是把它 **JSON 序列化后**拼进
-    user message 的 —— 序列化顺序、键名都可能影响文本。这条直接盯**文本本身**。
+    (直接钉构造器,而不是只钉"某一次 run 的产物" —— 前者才挡得住新调用点。)
+    """
+    from eval_gate.judge import build_item
+    it = build_item(1, "q", {"answer_contains": ["x"]}, "a", ["s"])
+    assert "deterministic" not in it, f"build_item 又产出该字段:{sorted(it)}"
+
+
+def test_judge_message_has_exactly_the_four_contracted_keys(run_both):
+    """**端到端守卫**:发出去的 user 文本**恰好**是那四个键,且顺序固定。
+
+    只看 `item` 的字典**不够** —— `judge.py` 是把它 **JSON 序列化后**拼进 user message 的,
+    序列化顺序与键名都会进**文本**。这条直接盯文本,并**逐字**钉住键集与顺序:
+    任何"悄悄多塞一个字段"的改动都会在这里现形(未解释字段进提示词是本仓的既有病根)。
     """
     from eval_gate.judge import Judge as _J
     _, judge = run_both()
-    item = judge.items[0]
-    text = json.dumps({
-        "question": item.get("question"), "expected": item.get("expected"),
-        "sut_answer": item.get("sut_answer"), "sut_sources": item.get("sut_sources", []),
-        "deterministic": item.get("deterministic", {}),
-    }, ensure_ascii=False)
-    assert '"hits"' in text, "判分器可见文本里应仍是 hits"
-    assert '"issues"' not in text, "判分器可见文本不应出现 issues"
+    text = _J(chat=lambda msgs: "{}")._messages(judge.items[0])[1]["content"]
+    got = list(json.loads(text))
+    assert got == ["question", "expected", "sut_answer", "sut_sources"], \
+        f"判分器可见文本的键集/顺序变了:{got}"
+
+
+def test_judge_ignores_deterministic_even_when_present():
+    """**纵深防御**:即便有人把一个**带 `deterministic` 的 item** 塞进来
+    (旧产物 / 外部调用方 / 未来新调用点),发出去的文本里也**不得**出现它。
+
+    为什么要有这一条:`build_item` 只挡住"用它的调用点";
+    而 judge 是**可被外部直接构造 item** 的(`cli.py` 的 calibrate 路径即为一例)。
+    """
+    from eval_gate.judge import Judge as _J
+    legacy = {"question": "q", "expected": {}, "sut_answer": "a", "sut_sources": [],
+              "deterministic": {"passed": False, "hits": ["未命中任一期望关键点: ['X']"]}}
+    text = _J(chat=lambda msgs: "{}")._messages(legacy)[1]["content"]
+    assert "deterministic" not in text, "硬层字段泄漏进了判分器可见文本"
+    assert "未命中" not in text, "硬层结论的文案泄漏进了判分器可见文本(会锚定 judge)"
