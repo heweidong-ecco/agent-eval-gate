@@ -66,6 +66,12 @@
 
 **⇒ 业务方将自行重启 Docker Desktop。** 新会话开工第一步:
 
+> ⚠️ **起依赖只用 `docker start`,<u>不要</u>用 `docker compose up`**(业务方 2026-09-15 指示:
+> **内存有限,只开需要的**)。需要的只有 `postgres-rag` / `redis-rag`,脚本自己会起;
+> **别额外跑 compose** —— 那会把 compose 里其余服务一并拉起白吃内存。
+> (数据卷 `my-fixed-name_postgres_data` / `_redis_data` 仍在 ⇒ `docker start` 复用原卷,知识库不丢。)
+
+
 ```bash
 # ① 自查 Docker VM 是否活了(两行都该是 Up)
 docker ps -a --format '{{.Names}}|{{.Status}}' | grep -E 'postgres-rag|redis-rag'

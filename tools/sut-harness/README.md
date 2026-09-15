@@ -28,6 +28,14 @@
 
 ## 用法
 
+> ⚠️ **起依赖只用 `docker start`,<u>不要</u>用 `docker compose up`**(业务方 2026-09-15 指示:
+> **本机内存有限,只开需要的**)。需要的只有两个:`postgres-rag` / `redis-rag`
+> —— 它们由**被测仓自己的** `docker-compose.yml` 定义(`container_name` 同名,项目名 `my-fixed-name`),
+> 数据卷 `my-fixed-name_postgres_data` / `_redis_data` **仍在**,`docker start` 会**复用原卷**(知识库不丢)。
+> 脚本自身就是这么做的(见 `run_sut.sh` 第 32 行 `docker start postgres-rag redis-rag`)
+> ⇒ **不要额外跑 compose**:那会把 compose 里其余服务一并拉起,白吃内存
+> (本机还停着别的项目的容器:memory-db / zero-* / grafana / prometheus)。
+
 ```bash
 export EVAL_SUT_FASTAPI_API_KEY=<admin key>     # 能力探针要用;跳过它会失去最重要的那道保险
 tools/sut-harness/run_sut.sh                    # 默认路径;可用 EVAL_SUT_REPO 覆盖
