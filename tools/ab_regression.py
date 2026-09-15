@@ -169,9 +169,11 @@ def _probes(n: int) -> list[int]:
 
 
 #: 单轮(一次完整评测集评估)的**实测** token 量级 —— 用于 live 预算提示。
-#: 依据:真实链路 48 条一轮实测 2.86–2.99 万(见 `eval/l1_baseline.json` 与 P4-2 报告);
-#: 这里取保守的 2.4 万(与 ROADMAP 的 M2 报备口径一致)。
-EST_TOKENS_PER_ROUND = 24_000
+#: 依据:真实链路 48 条一轮实测 **2.86–2.99 万**(见 `eval/l1_baseline.json` 与 P4-2 报告)。
+#: ⚠️ 2026-09-15 修:原值 **24,000** 是早期报备口径,**比实测低 16–20%**
+#: —— 而操作员是**按下百万 token 之前**读这行预告的人,低报正是"预算误解"的温床。
+#: 现取实测**上界** 30,000(保守);批次跑完再用真实均值定稿。
+EST_TOKENS_PER_ROUND = 30_000
 
 
 def rounds_planned(n: int, repeats: int, no_curve: bool) -> int:
@@ -180,8 +182,9 @@ def rounds_planned(n: int, repeats: int, no_curve: bool) -> int:
     轮数 = 单次实验(`2N`)+ N 曲线(`2·repeats·Σprobes`)。
 
     ⚠️ N 曲线的放大是**乘法**的:`_probes(20)` 有 3 个采样点、平均约 13,
-    `repeats` 默认 10 ⇒ N=20 时 **40 轮 → 820 轮(约 19.5×)**。
-    live 模式下 1 轮 ≈ 2.4 万 token ⇒ 不加 `--no-curve` 会从 ~96 万涨到 ~1968 万。
+    `repeats` 默认 10 ⇒ N=20 时 **40 轮 → 820 轮(总倍数 20.5×)**。
+    live 模式下 1 轮 ≈ **2.86–2.99 万** token(`EST_TOKENS_PER_ROUND` 取上界 3 万)
+    ⇒ 不加 `--no-curve` 会从 ~120 万涨到 ~2,460 万。
     """
     base = 2 * n
     return base if no_curve else base + 2 * repeats * sum(_probes(n))
@@ -201,7 +204,7 @@ def main(argv=None) -> int:
                          "不传 = 不限。live 下强烈建议传(此前无任何累计上限)")
     ap.add_argument("--no-curve", action="store_true",
                     help="跳过 N 曲线,只做单次实验(= 2N 轮)。**live 下这是预算守卫**:"
-                         "曲线会把轮数放大约 19.5×(N=20 时 40→820)")
+                         "曲线会把轮数放大约 20.5×(N=20 时 40→820)")
     ap.add_argument("--report-dir", default=None,
                     help="**逐轮产物目录**(报告 + trace + 日志)。给 ⇒ 每轮落"
                          " `<run_id>.local.json` / `.trace.jsonl` / `.log`;"
@@ -266,11 +269,34 @@ def main(argv=None) -> int:
 
     # ① 单次实验(N 轮/臂)→ 报告主结论
     budget = _Budget(cap=args.max_tokens)
+    curve: list[dict] = []
+    # ⚠️ **①② 共用一个 budget,且共用同一段 try**(2026-09-15 修):
+    #    此前曲线里的 `_run_arm` **没传 budget**(各自 `_Budget()`,`cap=None`)
+    #    ⇒ 漏写 `--no-curve` 时 **780 轮不受任何上限约束**(量级 2000 万),
+    #    且超限会以 traceback 收场(不是契约里的 exit 4)。
     try:
+        # ① 单次实验(2N 轮)→ 报告主结论
         rates_a = _run_arm(ev, arm(args.arm_a, args.seed), args.n, label="A",
                            budget=budget, report_dir=report_dir, evals_path=args.evals)
         rates_b = _run_arm(ev, arm(args.arm_b, args.seed + SEED_OFFSET_B), args.n,
                            label="B", budget=budget, report_dir=report_dir, evals_path=args.evals)
+
+        # ② N 曲线:每个采样点重复 R 次,算「判为退化」的比例
+        #    `--no-curve` 时跳过 —— live 下这是预算守卫(见 `rounds_planned`)
+        if not args.no_curve:
+            for n_probe in _probes(args.n):
+                detected = 0
+                for r in range(args.repeats):
+                    sa = args.seed + 1000 * r
+                    sb = sa + SEED_OFFSET_B
+                    # ⚠️ 曲线**刻意不落产物**(默认 780 轮,逐轮落盘会灌出上千文件),
+                    #    但**必须共用 budget** —— 否则熔断对它形同虚设。
+                    ra = _run_arm(ev, arm(args.arm_a, sa), n_probe, budget=budget)
+                    rb = _run_arm(ev, arm(args.arm_b, sb), n_probe, budget=budget)
+                    if ab_verdict(ra, rb)["verdict"] == "regressed":
+                        detected += 1
+                curve.append({"n": n_probe, "detection_rate": detected / args.repeats,
+                              "repeats": args.repeats})
     except BudgetExceeded as e:
         print(f"[ab] ⛔ **熔断**:累计 token {e.spent:,} ≥ 上限 {e.cap:,} —— 已中止(未跑完)",
               file=sys.stderr)
@@ -278,29 +304,13 @@ def main(argv=None) -> int:
         Path(args.out).write_text(json.dumps(
             {"tool": "tools/ab_regression.py", "mode": "live" if args.live else "offline-jitter",
              "warning": WARNING, "evals": {"file": args.evals, "cases": len(ev.cases)},
+             # 熔断时把**已算出的部分曲线**一并留痕 —— 否则事后看不出"跑到哪一步被掐的"
+             "detection_curve": curve,
              "run": {"aborted": True, "spent_tokens": budget.spent, "max_tokens": args.max_tokens,
                      "n": args.n, "no_curve": args.no_curve, "commit": _git_commit()},
              "reason": str(e)}, ensure_ascii=False, indent=1), encoding="utf-8")
         return 4
     single = ab_verdict(rates_a, rates_b)
-
-    # ② N 曲线:每个采样点重复 R 次,算「判为退化」的比例
-    #    `--no-curve` 时跳过 —— live 下这是预算守卫(见 `rounds_planned`)
-    curve = []
-    if not args.no_curve:
-        for n_probe in _probes(args.n):
-            detected = 0
-            for r in range(args.repeats):
-                sa = args.seed + 1000 * r
-                sb = sa + SEED_OFFSET_B
-                ra = _run_arm(ev, arm(args.arm_a, sa), n_probe)
-                rb = _run_arm(ev, arm(args.arm_b, sb), n_probe)
-                # ⚠️ 曲线**刻意不落产物**:它是 `repeats × 采样点` 的倍增(默认 780 轮),
-                #    逐轮落盘会灌出上千个文件。取证只对 ① 单次实验(即 `--no-curve` 的 2N 轮)做。
-                if ab_verdict(ra, rb)["verdict"] == "regressed":
-                    detected += 1
-            curve.append({"n": n_probe, "detection_rate": detected / args.repeats,
-                          "repeats": args.repeats})
 
     doc = {
         "tool": "tools/ab_regression.py",
