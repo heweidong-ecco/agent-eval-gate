@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import os
 import sys
@@ -158,8 +159,23 @@ def default_thresholds(path: str | Path | None = None) -> dict:
     return {**_FALLBACK_THRESHOLDS, **thr}
 
 
+#: 同进程内的运行序号 —— 见 `_run_id` 的说明(防同秒撞名)。
+_RUN_SEQ = itertools.count()
+
+
 def _run_id(ev: EvSet, quality: str) -> str:
-    seed = f"{time.time():.0f}-{quality}-{ev.version}-{len(ev.cases)}"
+    """运行 id:`<YYYYMMDD-HHMMSS>-<8hex>`。
+
+    ⚠️ **必须防同秒撞名**(2026-09-15 实测):种子原本是 `{time.time():.0f}`(秒级)——
+    于是**同一秒内**、同一评测集/quality 的两次运行会得到**完全相同的 run_id**
+    ⇒ 后者的 `.local.json` / `.trace.jsonl` **静默覆盖**前者 ⇒ **证据蒸发**。
+
+    这不是理论风险:A/B 驱动一次要跑 `2N` 轮,而 mini 集一轮 <1 秒 ⇒ 40 轮里有大量同秒;
+    普通 CLI 连跑几轮小集合同样会撞。⇒ 种子改为 **微秒级时间 + 同进程序号**(跨进程由时间精度覆盖)。
+    格式不变(仍是 `<时间戳>-<8hex>`),`trace_stats` 按文件名取 id 的口径不受影响。
+    """
+    seed = (f"{time.time():.6f}-{next(_RUN_SEQ)}-"
+            f"{quality}-{ev.version}-{len(ev.cases)}")
     digest = hashlib.sha1(seed.encode()).hexdigest()[:8]
     return f"{time.strftime('%Y%m%d-%H%M%S')}-{digest}"
 

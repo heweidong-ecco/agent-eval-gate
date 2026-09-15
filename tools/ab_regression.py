@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import random
 import statistics
@@ -33,6 +34,8 @@ sys.path.insert(0, str(ROOT / "app"))
 
 from eval_gate.config import judge_config                      # noqa: E402
 from eval_gate.judge import Judge, JudgeVerdict                # noqa: E402
+from eval_gate.obs import Tracer                               # noqa: E402
+from eval_gate.report import write_run                         # noqa: E402
 from eval_gate.runner import evaluate                          # noqa: E402
 from eval_gate.schema import EvalError, load_evals             # noqa: E402
 from eval_gate.stats import ab_verdict                         # noqa: E402
@@ -96,7 +99,8 @@ class _Budget:
             raise BudgetExceeded(self.spent, self.cap or 0)
 
 
-def _run_arm(ev, make_judge, n: int, *, label: str = "", budget: "_Budget | None" = None) -> list[float]:
+def _run_arm(ev, make_judge, n: int, *, label: str = "", budget: "_Budget | None" = None,
+             report_dir: Path | None = None, evals_path: str | None = None) -> list[float]:
     """跑 n 轮,每轮返回该轮 L2 达标率(completion)。
 
     ⚠️ `make_judge(i)` 必须**按轮次**产出独立的 judge。踩过的坑:若每轮都新建
@@ -107,14 +111,47 @@ def _run_arm(ev, make_judge, n: int, *, label: str = "", budget: "_Budget | None
     rates = []
     budget = budget if budget is not None else _Budget()
     for i in range(n):
-        res = evaluate(ev, judge=make_judge(i))
+        # ⚠️ **必须传 tracer 并落盘**(2026-09-15):不传 ⇒ 这一轮只剩一个 completion 浮点,
+        #    A3 要的 `sut.call`/`attempts` 到不了文件、B4 要的逐 case 答案拿不到、
+        #    一次 ≈116 万 token 的运行**不可审计**(详见 `docs/plans/2026-09-15-收尾批次-实施计划.md`)。
+        tr = Tracer(log_stream=io.StringIO()) if report_dir is not None else None
+        res = evaluate(ev, judge=make_judge(i), tracer=tr)
         rates.append(float(res.summary["completion"]))
         budget.add(getattr(res, "judge_usage", None))     # 先累加,再报 —— 否则进度行滞后一轮
+        if report_dir is not None:
+            _write_round_artifacts(res, tr, report_dir, evals_path, make_judge(i))
         # 逐轮进度 —— 此前跑起来是黑盒(无 trace、无逐轮产物,只能等结束)
         print(f"[ab] {label}轮 {i + 1}/{n} · completion={rates[-1]:.4f}"
               f" · 累计 judge token={budget.spent:,}", file=sys.stderr)
         budget.check()
     return rates
+
+
+def _write_round_artifacts(res, tr, report_dir: Path, evals_path: str | None, judge) -> None:
+    """把一轮的**报告 + trace(+日志)**写进 `report_dir`。
+
+    产物命名沿用主 CLI:`<run_id>.local.json` / `<run_id>.trace.jsonl` ——
+    这样现成工具(`eval-gate stats`、`trace_stats`、`archive_evidence`)能直接吃。
+    ⚠️ 落盘失败**不得**让 A/B 整轮崩:它是取证层,不是判据层(与 `cli.py` 的 trace
+    落盘"失败不阻塞主流程"同一原则)。但**必须出声**,否则又变成静默丢证据。
+    """
+    try:
+        report_dir.mkdir(parents=True, exist_ok=True)
+        write_run(res, report_dir, evals_path or "<unknown>", _judge_label(judge))
+        if tr is not None:
+            tr.write_trace(report_dir / f"{res.run_id}.trace.jsonl")
+            logs = tr._log_stream.getvalue()          # noqa: SLF001 —— 本仓内部工具,取回日志文本
+            if logs:
+                (report_dir / f"{res.run_id}.log").write_text(logs, encoding="utf-8")
+    except OSError as e:
+        print(f"[ab] ⚠ 第 {res.run_id} 轮产物落盘失败(**证据可能不完整**):{e}", file=sys.stderr)
+
+
+def _judge_label(judge) -> str:
+    try:
+        return judge.label()
+    except Exception:                                  # noqa: BLE001 —— 标签失败不该影响落盘
+        return "unknown"
 
 
 def _git_commit() -> str:
@@ -165,6 +202,11 @@ def main(argv=None) -> int:
     ap.add_argument("--no-curve", action="store_true",
                     help="跳过 N 曲线,只做单次实验(= 2N 轮)。**live 下这是预算守卫**:"
                          "曲线会把轮数放大约 19.5×(N=20 时 40→820)")
+    ap.add_argument("--report-dir", default=None,
+                    help="**逐轮产物目录**(报告 + trace + 日志)。给 ⇒ 每轮落"
+                         " `<run_id>.local.json` / `.trace.jsonl` / `.log`;"
+                         "**不给 ⇒ 不落产物**(保持既有行为,供离线冒烟用)。"
+                         "⚠️ `--live` 时**必填** —— 不可审计的百万 token 花销是本批次要根除的东西")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
@@ -202,6 +244,17 @@ def main(argv=None) -> int:
               "拒绝静默回落到合成抖动(那会冒充真实噪声)", file=sys.stderr)
         return 3
 
+    # ⚠️ **`--live` 必须声明产物目录**(2026-09-15)—— 刻意放在 **judge 配置检查之后**:
+    #    若放前面,"judge 没配好"那条测试会改走这条分支 ⇒ **因错误的原因通过**
+    #    (报错文案里就看不到 EVAL_JUDGE 了)。
+    #    理由:真实一轮是百万 token 量级,而**不可审计的百万 token** 正是本批次要根除的东西。
+    if args.live and not args.report_dir:
+        print("[ab] --live 必须显式给 --report-dir:真实一轮是百万 token 量级,"
+              "没有逐轮产物就不可审计(拿不到 attempts 与逐 case 答案)", file=sys.stderr)
+        return 3
+
+    report_dir = Path(args.report_dir) if args.report_dir else None
+
     def arm(p: float, base_seed: int):
         """返回 `make_judge(i)`:第 i 轮用 `base_seed + i` 种子(轮间独立)。"""
         if args.live:
@@ -215,9 +268,9 @@ def main(argv=None) -> int:
     budget = _Budget(cap=args.max_tokens)
     try:
         rates_a = _run_arm(ev, arm(args.arm_a, args.seed), args.n, label="A",
-                           budget=budget)
+                           budget=budget, report_dir=report_dir, evals_path=args.evals)
         rates_b = _run_arm(ev, arm(args.arm_b, args.seed + SEED_OFFSET_B), args.n,
-                           label="B", budget=budget)
+                           label="B", budget=budget, report_dir=report_dir, evals_path=args.evals)
     except BudgetExceeded as e:
         print(f"[ab] ⛔ **熔断**:累计 token {e.spent:,} ≥ 上限 {e.cap:,} —— 已中止(未跑完)",
               file=sys.stderr)
@@ -242,6 +295,8 @@ def main(argv=None) -> int:
                 sb = sa + SEED_OFFSET_B
                 ra = _run_arm(ev, arm(args.arm_a, sa), n_probe)
                 rb = _run_arm(ev, arm(args.arm_b, sb), n_probe)
+                # ⚠️ 曲线**刻意不落产物**:它是 `repeats × 采样点` 的倍增(默认 780 轮),
+                #    逐轮落盘会灌出上千个文件。取证只对 ① 单次实验(即 `--no-curve` 的 2N 轮)做。
                 if ab_verdict(ra, rb)["verdict"] == "regressed":
                     detected += 1
             curve.append({"n": n_probe, "detection_rate": detected / args.repeats,

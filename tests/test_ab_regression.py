@@ -199,3 +199,96 @@ def test_round_progress_is_printed_for_visibility(tmp_path):
              "--out", str(out))
     assert p.returncode == 0, p.stderr
     assert "轮 1/" in (p.stderr + p.stdout)
+
+
+# ── 逐轮取证:让每一轮**落独立产物**(2026-09-15)─────────────────────────────
+#
+# 动机:`_run_arm` 原本是 `evaluate(ev, judge=make_judge(i))` —— **不传 tracer**,
+# 一圈跑完只留一个 completion 浮点。后果三条,每一条都致命:
+#   ① A3(轮间延迟取证)要的 `sut.call` / `attempts` **一个字节都到不了文件**
+#      —— 字段加了也白加(本仓前科:重试只写 stderr、不落盘);
+#   ② B4(judge 校准)要的**逐 case 答案**拿不到 ⇒ 凑不出新参照集;
+#   ③ 一次 ≈116 万 token 的运行**不可审计** —— 只有两个浮点数组。
+# ⇒ 这是本批次**唯一挡在 116 万前面的东西**。
+
+def _artifact_names(d: Path, suffix: str) -> set[str]:
+    return {p.name.split(".")[0] for p in d.glob(f"*{suffix}")}
+
+
+def test_every_round_writes_its_own_run_artifacts(tmp_path):
+    """2 轮 × 2 臂 ⇒ **4 份 trace + 4 份报告**,且 run_id 一一对应。"""
+    rd = tmp_path / "runs"
+    out = tmp_path / "ab.json"
+    p = _run("--evals", str(EVALS), "--arm-a", "0.9", "--arm-b", "0.8",
+             "--n", "2", "--repeats", "1", "--no-curve",
+             "--report-dir", str(rd), "--out", str(out))
+    assert p.returncode == 0, p.stderr
+    traces = sorted(rd.glob("*.trace.jsonl"))
+    reports = sorted(rd.glob("*.local.json"))
+    assert len(traces) == 4, \
+        f"2 轮 × 2 臂应各留一份 trace,实得 {len(traces)}: {[q.name for q in traces]}"
+    assert len(reports) == 4, f"报告数不对: {[q.name for q in reports]}"
+    assert _artifact_names(rd, ".trace.jsonl") == _artifact_names(rd, ".local.json"), \
+        "trace 与报告 run_id 对不上 ⇒ 事后无法把落盘证据配成一轮"
+    # ⚠️ **光有文件不够**:若 `evaluate()` 没拿到 tracer,trace 会是**空文件** ——
+    #    文件数照样对,但里面一个 span 都没有(= 什么都没记)。
+    #    (突变验证时实测到:只数文件条数抓不住这种"空壳"。)
+    for q in traces:
+        spans = [json.loads(l) for l in q.read_text(encoding="utf-8").splitlines() if l.strip()]
+        assert any(s["name"] == "run.evaluate" for s in spans), \
+            f"{q.name} 是空壳 trace(没有 run.evaluate span)⇒ 这一轮实际没有取证"
+
+
+def test_written_trace_carries_retry_visibility_fields(tmp_path):
+    """**端到端**:`attempts` 必须真的写进 `.trace.jsonl`(不是只进内存)。
+
+    落盘是唯一能"跑完之后还查得到"的地方 —— 若这里取不到,A3 的取证
+    ("是不是重试吃掉的")就无从下手。
+    """
+    rd = tmp_path / "runs"
+    p = _run("--evals", str(EVALS), "--arm-a", "0.9", "--arm-b", "0.8",
+             "--n", "2", "--repeats", "1", "--no-curve",
+             "--report-dir", str(rd), "--out", str(tmp_path / "ab.json"))
+    assert p.returncode == 0, p.stderr          # 驱动要求 --n ≥ 2
+    tr = sorted(rd.glob("*.trace.jsonl"))[0]
+    spans = [json.loads(l) for l in tr.read_text(encoding="utf-8").splitlines() if l.strip()]
+    sut_spans = [s for s in spans if s["name"] == "sut.call"]
+    assert sut_spans, "trace 里没有 sut.call span ⇒ 这轮没有逐 case 证据"
+    assert all("attempts" in s["attributes"] for s in sut_spans), \
+        "sut.call span 缺 attempts ⇒ A3 将无从判断'是不是重试吃掉的'"
+
+
+def test_without_report_dir_no_artifacts_are_written(tmp_path):
+    """不传 `--report-dir` ⇒ **不落产物**(保持既有行为)。
+
+    这一条是**给测试与本地冒烟用的**:否则每次离线冒烟都会往 `eval/runs/` 里灌文件。
+    真实批次**必须显式声明目录** —— 见下面的守卫用例。
+    """
+    rd = tmp_path / "runs"
+    rd.mkdir()
+    p = _run("--evals", str(EVALS), "--n", "2", "--repeats", "1", "--no-curve",
+             "--out", str(tmp_path / "ab.json"))
+    assert p.returncode == 0, p.stderr          # 驱动要求 --n ≥ 2
+    assert not list(rd.glob("*.trace.jsonl"))
+
+
+def test_live_without_report_dir_is_refused(tmp_path):
+    """`--live` 却不声明产物目录 ⇒ **exit 3 拒启动**。
+
+    理由:一次真实运行的成本量级是 100 万 token,而**不可审计的百万 token 花销**
+    正是本批次要根除的东西。离线冒烟不受此限(不让测试往仓里灌文件)。
+
+    ⚠️ judge 配置**必须给假的非空值**:若留空,这条会因"judge 未配置"就 exit 3
+    —— **因为错误的原因通过**(报错文案里根本没有 report-dir)。
+    下面的 `assert "report-dir"` 就是防这个的。指向 `127.0.0.1:1` 且**在校验后才可能发请求**,
+    而校验在发请求之前 ⇒ 不会真的外联。
+    """
+    out = tmp_path / "ab.json"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("EVAL_JUDGE_")}
+    env.update({"EVAL_DOTENV": "0", "EVAL_JUDGE_BASE_URL": "http://127.0.0.1:1/v1",
+                "EVAL_JUDGE_API_KEY": "dummy-not-used", "EVAL_JUDGE_MODEL": "dummy"})
+    p = _run("--evals", str(EVALS), "--live", "--n", "2", "--repeats", "1",
+             "--no-curve", "--out", str(out), env=env)
+    assert p.returncode == 3, f"应拒启动,实得 {p.returncode}:\n{p.stderr}"
+    assert "report-dir" in (p.stderr + p.stdout).lower(), \
+        f"拒绝的理由必须是缺产物目录,不是别的:\n{p.stdout}\n{p.stderr}"
