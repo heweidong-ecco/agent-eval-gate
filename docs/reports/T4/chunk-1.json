@@ -1,0 +1,58 @@
+{
+  "tool": "tools/ab_regression.py",
+  "mode": "live",
+  "warning": "离线模式的方差来源是**合成抖动**(JitterJudge 按概率判 pass,种子可复现),不代表真实模型噪声;本文件只用于标定统计装置与给出 N 的下界。真实 judge 的 A/B 需预算报备后以 --live 运行。",
+  "evals": {
+    "file": "eval/fastapi_rag_golden.evals.json",
+    "cases": 48
+  },
+  "arms": {
+    "baseline": {
+      "p": 0.9,
+      "rates": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "candidate": {
+      "p": 0.8,
+      "rates": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  },
+  "single_experiment": {
+    "u": 8.0,
+    "p": 1.0,
+    "d": null,
+    "verdict": "no_difference",
+    "n_a": 4,
+    "n_b": 4,
+    "effect_defined": false
+  },
+  "detection_curve": [],
+  "detection_rate": 0.0,
+  "stats_summary": {
+    "baseline_mean": 1.0,
+    "candidate_mean": 1.0
+  },
+  "run": {
+    "commit": "3a0159c",
+    "n": 4,
+    "repeats": 10,
+    "seed": 7,
+    "seed_offset_b": 9973,
+    "no_curve": true,
+    "rounds_planned": 8,
+    "aborted": false,
+    "spent_tokens": 286108,
+    "max_tokens": 320000,
+    "elapsed_s": 1433.8,
+    "timestamp": "2026-09-15T21:55:54+0800"
+  }
+}

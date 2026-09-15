@@ -40,7 +40,13 @@ echo "   已导出到临时树(不含任何本地产物)"
 #    这里补齐 CI 的两件事:`git init` + `setup-hooks.sh` 的效果(`core.hooksPath`)。
 git -C "$TMP" init -q
 git -C "$TMP" config core.hooksPath .githooks
-echo "   已初始化 git 仓并设 core.hooksPath(对齐 CI 的 clone + setup-hooks.sh)"
+# ⚠️ **索引必须填充**(2026-09-15 实证):`git archive` 只**导出文件**,**不建索引** ⇒
+#    临时树是个"有工作区、没索引"的仓。而**真 clone 的索引是满的** ⇒
+#    任何用 `git ls-files` 判断"这个文件在不在 git 里"的检查,在这里看到**空仓** ——
+#    于是它**CI 绿、自检红**,自检**假报不密闭**(把忠实的环境说成不忠实)。
+#    触发实例:`tools/check_evidence_coverage.py`(DEC-018)用 `git ls-files` 判归档是否存在。
+git -C "$TMP" add -A
+echo "   已初始化 git 仓、设 core.hooksPath、并填充索引(对齐 CI 的 clone + setup-hooks.sh)"
 
 # ⚠️ 自检必须先证明"它测的确实是那棵树" —— 否则它自己就是又一个"看起来在测"的检查
 echo "③ 自证:确认 import 的是**临时树里的** eval_gate,不是本机安装的那份"

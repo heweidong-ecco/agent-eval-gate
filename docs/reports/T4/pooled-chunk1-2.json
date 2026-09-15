@@ -1,0 +1,92 @@
+{
+  "tool": "tools/ab_pool.py",
+  "mode": "live",
+  "pooled_from": [
+    {
+      "file": "chunk-1.json",
+      "commit": "3a0159c",
+      "n": 4,
+      "rounds": 8,
+      "spent_tokens": 286108,
+      "elapsed_s": 1433.8,
+      "baseline_mean": 1.0,
+      "candidate_mean": 1.0
+    },
+    {
+      "file": "chunk-2.json",
+      "commit": "3a0159c",
+      "n": 4,
+      "rounds": 8,
+      "spent_tokens": 285051,
+      "elapsed_s": 1313.7,
+      "baseline_mean": 1.0,
+      "candidate_mean": 1.0
+    }
+  ],
+  "evals": {
+    "file": "eval/fastapi_rag_golden.evals.json",
+    "cases": 48
+  },
+  "arms": {
+    "baseline": {
+      "rates": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "stats": {
+        "n": 8,
+        "mean": 1.0,
+        "pstdev": 0.0,
+        "min": 1.0,
+        "max": 1.0,
+        "saturated_rounds": 8
+      }
+    },
+    "candidate": {
+      "rates": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "stats": {
+        "n": 8,
+        "mean": 1.0,
+        "pstdev": 0.0,
+        "min": 1.0,
+        "max": 1.0,
+        "saturated_rounds": 8
+      }
+    }
+  },
+  "single_experiment": {
+    "u": 32.0,
+    "p": 1.0,
+    "d": null,
+    "verdict": "no_difference",
+    "n_a": 8,
+    "n_b": 8,
+    "effect_defined": false
+  },
+  "run": {
+    "commit": "3a0159c",
+    "chunks": 2,
+    "n_per_arm": 8,
+    "rounds": 16,
+    "no_curve": true,
+    "spent_tokens_total": 571159,
+    "elapsed_s_total": 2747.5,
+    "aborted_any": false
+  },
+  "_limitations": "分块池化 **≠** 一次连续运行:各块之间有真实的时间间隔,环境(机器负载/网络/被测状态)可能不同 ⇒ 池化把「块间差异」也计入了轮间方差。另外本产物只含 ① 单次实验的逐轮达标率;N 曲线的检出率**未被池化**(语义不同)。⚠️ 若 `detection_curve` 为空且 `detection_rate` 为 0,那是**未测**,不是检出率为零。"
+}
