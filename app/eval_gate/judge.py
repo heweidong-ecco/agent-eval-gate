@@ -146,13 +146,19 @@ def _parse_verdict(text: str) -> JudgeVerdict | None:
 
 
 def build_item(case_id: int, question: str, expected: dict, sut_answer: str,
-               sut_sources: list[str] | None = None,
-               deterministic: dict | None = None) -> dict:
+               sut_sources: list[str] | None = None) -> dict:
+    """判分器入参的**唯一构造器**。
+
+    ⚠️ **刻意不收确定性层结论**(`DEC-015 §1.2` / 方案 B1,签核 D-19 + D-24):
+    硬层结论对 judge **毫无用处**(硬层不过时 `verdict` 直接判 fail,judge 意见被覆盖)·
+    **会锚定**(`DEC-004` 的设计恰是**软层由 judge 独立判断**)· 未解释的字段本就该最小化。
+    ⇒ 参数**已移除** —— 不是"传了但不发",而是**传不进来**。
+    `tests/test_deterministic_naming.py` 盯着这一面。
+    """
     return {
         "case_id": case_id, "question": question, "expected": expected,
         "sut_answer": sut_answer or "",
         "sut_sources": list(sut_sources or []),
-        "deterministic": dict(deterministic or {}),
     }
 
 
@@ -226,12 +232,16 @@ class Judge:
             '"reasons":["逐条依据，含对 expected 的命中/偏离"],"evidence_refs":[],"labels":[]}。'
             "flag 用于存疑需人工复核。"
         )
+        # ⚠️ **恰好四个键,顺序固定**(`DEC-015` 方案 B1,签核 D-24)。
+        #    `deterministic` 已**整个去掉**:它会锚定 judge,而硬层结论对 judge 本无用
+        #    (`DEC-015 §1.2`)。这里是**纵深防御** —— 即便有人塞进一个带该键的 item
+        #    (旧产物/外部调用方),它也不会进到发出去的文本里。
+        #    `tests/test_deterministic_naming.py` 逐字钉住键集与顺序。
         user = json.dumps({
             "question": item.get("question"),
             "expected": item.get("expected"),
             "sut_answer": item.get("sut_answer"),
             "sut_sources": item.get("sut_sources", []),
-            "deterministic": item.get("deterministic", {}),
         }, ensure_ascii=False)
         return [{"role": "system", "content": sys}, {"role": "user", "content": user}]
 

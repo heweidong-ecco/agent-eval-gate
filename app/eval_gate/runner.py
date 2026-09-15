@@ -283,14 +283,13 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
         res["evidence_refs"] = []
         return res, False
 
-    # ⚠️ **这里的键名 `hits` 是刻意保留的**(DEC-015 / 签核 D-19)——
-    #    judge.py:234 会把这个 dict **原样 JSON 化**塞进判分器的 user message,
-    #    所以**改这个键 = 改判分器输入**(⇒ 按本仓纪律须跑真实回归,≈3 万 token)。
-    #    因此本轮只改了**报告面**的键名(`hits`→`issues`),**判分器这一面不动**;
-    #    它的改名并入 DEC-015 方案 B(B 本来就要跑回归,一次覆盖两处)。
-    #    ⚠️ 别"顺手"把它一起改 —— `tests/test_deterministic_naming.py` 会红,那是提醒你先报备预算。
+    # ⚠️ **确定性层结论不再进判分器**(DEC-015 方案 B1,签核 D-24)——
+    #    `build_item` 的 `deterministic` 参数**已移除** ⇒ 这里是**传不进去**,
+    #    不是"传了但没发"。理由见 `judge.build_item` 的 docstring。
+    #    `tests/test_deterministic_naming.py` 四条守卫盯着这一面(含纵深防御那条)。
+    #    报告面仍带 `deterministic`(`res` 里那份)—— 它是**给我们自己读**的,与判分器无关。
     item = build_item(case.id, case.input.get("question", ""), _expected_dict(case),
-                      answer, sources, {"passed": rule.passed, "hits": rule.issues})
+                      answer, sources)
     judge_label = getattr(judge, "label", lambda: "unknown")()
     with _span(tracer, "judge.grade", kind="LLM", case_id=case.id, judge=judge_label) as jsp:
         try:
