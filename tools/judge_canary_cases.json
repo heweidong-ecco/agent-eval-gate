@@ -1,0 +1,79 @@
+{
+  "_doc": "judge 金丝雀的构造用例 —— 每条都是**必须被拦**的答案。收尾批次 PR-5 / A2 的验收②(DEC-015 方案 B1)。",
+  "_rules": [
+    "① **每条必须写 why** —— 后人看到一条常年红的金丝雀,若不知道为什么它该被拦,会把它当噪声删掉。",
+    "② **为什么必须被拦**由 `expected` + 判据分层(DEC-004)决定:",
+    "   - 硬层(红队/注入/必拒/禁现/空回答)**不过判分器** ⇒ 本文件只放**软层**样本(判分器权威);",
+    "   - 软层 `answer_contains` =『含其一即符』**仅限拒答语境**(DEC-009 §4);",
+    "     **非拒答的答非所问必须切题** —— `kind=stacked_non_answer` 测的就是这条刻意收窄的边界。",
+    "③ **条数 ≤10**(计划书 §六):金丝雀每次运行都要调模型(≈1 万 token),**不进 CI**。",
+    "④ 提问与 expected **取自真实评测集**(`eval/fastapi_rag_golden.evals.json`)⇒ 与生产同分布;",
+    "   答案是我们**故意写坏**的。"
+  ],
+  "cases": [
+    {
+      "id": 1,
+      "kind": "off_topic",
+      "question": "Python 是一门什么样的编程语言？",
+      "expected": {"answer_contains": ["解释型", "面向对象"]},
+      "sut_answer": "Java 是一种编译型语言，广泛用于企业级后端开发，拥有成熟的生态。",
+      "why": "完全跑题:问 Python 答 Java,一个候选词都没命中 ⇒ 必须 fail。"
+    },
+    {
+      "id": 3,
+      "kind": "stacked_non_answer",
+      "question": "FastAPI 是什么？",
+      "expected": {"answer_contains": ["Web 框架", "Python 框架", "API 框架"]},
+      "sut_answer": "Web 框架、Python 框架、API 框架 —— 这几个词今天在社区里被反复提起，讨论热度一直很高，值得持续关注。",
+      "why": "**堆砌了全部三个候选词,却没有回答『是什么』**。这是 DEC-009 §4 刻意不放行的那一类:『含其一即符』**只在拒答语境**成立;非拒答的答非所问**必须切题**。它若被判 pass,防关键词堆砌闸(DEC-004)就失效了。"
+    },
+    {
+      "id": 13,
+      "kind": "stacked_non_answer",
+      "question": "PostgreSQL 和 Redis 有什么区别？",
+      "expected": {"answer_contains": ["关系型", "内存"]},
+      "sut_answer": "关系型和内存都是数据库领域里很常见的说法，数据库技术本身非常重要。",
+      "why": "同上:两个候选词都出现,但**没有说出任何一条『区别』** ⇒ 非拒答的答非所问 ⇒ 必须 fail。"
+    },
+    {
+      "id": 19,
+      "kind": "stacked_non_answer",
+      "question": "多用户数据隔离如何实现？",
+      "expected": {"answer_contains": ["用户ID", "用户 ID", "用户id", "用户 id", "用户的ID", "用户的 id"]},
+      "sut_answer": "多用户数据隔离这个话题很大，这里就不展开讲了。用户 ID 只是其中很小的一个点，具体情况要看场景。",
+      "why": "含候选词「用户 ID」但**明确回避了『如何实现』**,且**不是拒答**(是在推诿,不是『资料未提及』)⇒ 走『非拒答须切题』⇒ 必须 fail。这条同时是 A-safe 时期那条守卫的**反向样本**:当年它守的是『判分器输入里必须有 hits』,现在这个字段不在了 —— 若判分器因此变松,这里会红。"
+    },
+    {
+      "id": 6,
+      "kind": "contrary_claim",
+      "question": "FastAPI 的性能如何？",
+      "expected": {"answer_contains": ["高性能", "性能优异", "性能高"]},
+      "sut_answer": "FastAPI 的性能很差，在并发场景下明显不如传统同步框架。",
+      "why": "**结论相反**:问性能,答的是『性能很差』。候选词一个未命中(『性能差』不含『高性能』)⇒ 必须 fail。"
+    },
+    {
+      "id": 9,
+      "kind": "hallucinated_number",
+      "question": "2025年全球AI市场规模如何？",
+      "expected": {"answer_contains": ["数千亿美元", "千亿美元"]},
+      "sut_answer": "2025 年全球 AI 市场规模约为 12 亿美元。",
+      "why": "**幻觉数字**:语料给的是『数千亿美元』量级,这里编了个差两个数量级的数 ⇒ 必须 fail(这正是「无中文语义特征、只有独立门能抓到」的那类)。"
+    },
+    {
+      "id": 2,
+      "kind": "refusal_when_answer_expected",
+      "question": "Python 主要用于哪些领域？",
+      "expected": {"answer_contains": ["数据科学", "人工智能", "Web 开发"]},
+      "sut_answer": "知识库中未找到相关信息，无法回答。",
+      "why": "**被测无理由拒答**:该题 `must_refuse=false`,语料里有依据(真实一轮它答得出)⇒ 拒答本身即不合格。注意它**不含任何候选词** ⇒ 不受『拒答语境字面即符』保护 ⇒ 必须 fail。"
+    },
+    {
+      "id": 16,
+      "kind": "perfunctory",
+      "question": "Python 在AI开发中的优势是什么？",
+      "expected": {"answer_contains": ["生态", "应用广泛", "广泛应用于"]},
+      "sut_answer": "Python 是一门编程语言。",
+      "why": "**敷衍**:答的是同义反复,没触及『在 AI 开发中的优势』 ⇒ 必须 fail。"
+    }
+  ]
+}
