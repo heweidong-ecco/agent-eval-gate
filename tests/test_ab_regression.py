@@ -3,8 +3,10 @@
 离线、零外网、零 token。跑的是 mini 评测集(8 条,其中 6 条走 judge),
 整套秒级 —— 它标定的是**统计装置**,不是模型质量。
 """
+import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -115,7 +117,7 @@ def test_no_curve_skips_detection_curve_and_reports_round_count(tmp_path):
     """`--no-curve`:只跑单次实验(`2N` 轮),不做 N 曲线。
 
     ⚠️ 动机:M2 只需要「N=20/臂」的单次实验,而 N 曲线会把**轮数**放大到
-    `2N + 2·repeats·Σprobes`(N=20 时 **40 → 820 轮**,约 19.5×)。
+    `2N + 2·repeats·Σprobes`(N=20 时 **40 → 820 轮**,总倍数 20.5×)。
     这个开关此前**不存在** —— 照文档直接跑 `--n 20 --live` 会超预算约 20 倍。
     """
     out = tmp_path / "ab.json"
@@ -270,6 +272,87 @@ def test_without_report_dir_no_artifacts_are_written(tmp_path):
              "--out", str(tmp_path / "ab.json"))
     assert p.returncode == 0, p.stderr          # 驱动要求 --n ≥ 2
     assert not list(rd.glob("*.trace.jsonl"))
+
+
+# ── 工具卫生三修(2026-09-15,PR-2)────────────────────────────────────────
+
+def _load_driver():
+    """把驱动当模块载入(用于对 `main()` 做**单元级**断言)。
+
+    子进程级测不了"曲线段也受熔断约束" —— 离线判分器不上报 token,`spent` 恒为 0,
+    上限永远触发不了。⇒ 必须把 `evaluate` 换成会上报用量的桩。
+    """
+    spec = importlib.util.spec_from_file_location("ab_regression_mod", DRIVER)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_live_estimate_uses_the_measured_per_round_cost(tmp_path):
+    """live 预算预告必须用**实测**每轮成本(**2.86–2.99 万**),不是旧的内置估值 2.4 万。
+
+    为什么较真:操作员是**按下 116 万之前**读这一行的人。低报 16–20% 正是"预算误解"的温床
+    —— 而本批次已经因为这类的口径漂移翻过一次车(`ROADMAP` 的 T4 行)。
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("EVAL_JUDGE_")}
+    env["EVAL_DOTENV"] = "0"
+    p = _run("--evals", str(EVALS), "--live", "--n", "20", "--no-curve",
+             "--report-dir", str(tmp_path / "runs"), "--out", str(tmp_path / "x.json"), env=env)
+    assert p.returncode == 3, f"无 judge 配置应 exit 3;实得 {p.returncode}\n{p.stderr}"
+    m = re.search(r"估算 ≈ ([\d,]+) tokens", p.stderr)
+    assert m, f"预告行没打印估算:\n{p.stderr}"
+    est = int(m.group(1).replace(",", ""))
+    low = 40 * 28_600          # 40 轮 × 实测下界 2.86 万
+    assert est >= low, \
+        f"live 预告低估:报 {est:,},而实测每轮 2.86–2.99 万 ⇒ 40 轮应 ≥ {low:,}"
+
+
+def test_curve_is_covered_by_the_token_breaker(tmp_path, monkeypatch):
+    """**N 曲线也必须受 `--max-tokens` 约束** —— 这是本批次唯一带"失控花钱"失败模式的缺陷。
+
+    实测:`_run_arm` 在曲线里**没拿到 budget**(`cap=None`)⇒ 漏写 `--no-curve` 时
+    780 轮**不受任何上限约束**,量级 **2000 万**。本批始终用 `--no-curve`(敞口被封住),
+    但修它只需 1 行 + 1 个突变测试 —— 用近乎为零的成本消掉一个 2000 万级事故。
+    """
+    mod = _load_driver()
+    calls = {"n": 0}
+
+    class _Res:
+        run_id = "deadbeef"
+        summary = {"completion": 1.0}
+        judge_usage = {"total_tokens": 10}
+
+    def fake_evaluate(ev, quality="faithful", judge=None, thresholds=None,
+                      quality_by_sut=None, tracer=None):
+        calls["n"] += 1
+        return _Res()
+
+    monkeypatch.setattr(mod, "evaluate", fake_evaluate)
+    # `--n 2 --repeats 1` ⇒ 计划 = 主实验 4 轮 + 曲线 4 轮 = 8 轮;每轮 10 token
+    # 上限 60:主实验(40)过得去,曲线到第 2 轮就超 ⇒ 必须熔断
+    rc = mod.main(["--evals", str(EVALS), "--n", "2", "--repeats", "1",
+                   "--max-tokens", "60", "--out", str(tmp_path / "ab.json")])
+    assert rc == 4, f"曲线段超上限必须熔断(exit 4),而不是无声跑完;实得 {rc}"
+    assert calls["n"] < 8, f"熔断后不该把全部轮跑完(实跑 {calls['n']} 轮)"
+    d = json.loads((tmp_path / "ab.json").read_text(encoding="utf-8"))
+    assert d["run"]["aborted"] is True
+
+
+def test_help_quotes_the_true_amplification_factor():
+    """help 里的放大倍数必须与 `rounds_planned` **算出来的一致**。
+
+    实测:代码 stderr 打的是**总倍数** `820/40 = 20.5×`,而 docstring/help/测试注释写**19.5×**
+    (那是**曲线增量** `780/40`)⇒ **代码是对的,文档写错了**。
+    把已知错的数字留在"预算纪律"议题旁边,是最廉价的信誉流失。
+    """
+    mod = _load_driver()
+    true_x = mod.rounds_planned(20, 10, False) / (2 * 20)          # 820/40 = 20.5
+    r = subprocess.run([sys.executable, str(DRIVER), "--help"],
+                       capture_output=True, text=True)
+    text = r.stdout + r.stderr
+    assert f"{true_x:.1f}×" in text, \
+        f"--help 未写出真实倍数 {true_x:.1f}×;含 × 的行:{[l for l in text.splitlines() if '×' in l]}"
+    assert "19.5×" not in text, "19.5× 是**曲线增量**倍数,不是操作员要看的**总**倍数"
 
 
 def test_live_without_report_dir_is_refused(tmp_path):
