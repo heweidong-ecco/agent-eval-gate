@@ -1,12 +1,12 @@
 # CLAUDE.md · agent-eval-gate 接续规约
 
-> 新会话启动锚点。改占位即可用:`agent-eval-gate` / `/Users/heweidong/Desktop/Product/product-agent-dev-os/知识库-Agent-System` / 「当前指针」。
+> 新会话启动锚点。改占位即可用:`agent-eval-gate` / `/Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/知识库-Agent-System` / 「当前指针」。
 > 领域权威 = B 知识库(`知识库-Agent-System`,只增不改);本文件纪律引 Kit `README.md` 消歧(术语:memory/观测/MCP/CI 门 勿串义)。
 
 ## 项目
 - 一句话:给其它 Agent 系统做「生产就绪评测门」:评估集 + LLM-as-Judge + CI eval-gate(**回放回归 = v1.1**,签核 D-3)。**第一版使用者 = 你自己(及你后续各 Agent 项目):自用先行,验证价值后再外化**(`需求基线.md:157`,已拍板;对外访谈尚未做);解决『能不能上线、上线质量可不可量化』的痛点。事实源 = `需求基线.md`(业务口径以它为准;B 阶段1 成果物落这里)。
 - 完整流程 = `docs/RUNBOOK.md`(自本 Kit 拷入;指 B 6阶段×12步 + 14 模块)。
-- B 知识库绝对路径:`/Users/heweidong/Desktop/Product/product-agent-dev-os/知识库-Agent-System`,如 `/Users/heweidong/Desktop/Product/product-agent-dev-os/知识库-Agent-System`(含 README 分层索引;阶段卡在 `04-分阶段工作流/`,模块在 `05-独立模块工作流/`)。
+- B 知识库绝对路径:`/Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/知识库-Agent-System`,如 `/Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/知识库-Agent-System`(含 README 分层索引;阶段卡在 `04-分阶段工作流/`,模块在 `05-独立模块工作流/`)。
 
 ## 接续协议
 1. 读本文件 → `ROADMAP.md`「当前指针」。
@@ -102,7 +102,7 @@
   (此前"直提 main"模式下,CI 在 push **之后**才跑,红叉只等于"记了一笔",东西已经上去了 —— 见 2026-09-11 CI #17–#33)。
   **前置**:`gh` 已装(v2.100.0,**官方二进制** —— `brew` 在 macOS 13 上已拒绝安装任何东西,真因非网络)并已 `gh auth login`。
   **回退保护**:`gh api -X DELETE repos/heweidong-ecco/agent-eval-gate/branches/main/protection`。
-- **避坑库(跨项目 · 给 Agent 读)**:`~/Desktop/Product/agent-pitfalls-kb/`
+- **避坑库(跨项目 · 给 Agent 读)**:`~/Desktop/Product/agent-facing/agent-pitfalls-kb/`
   —— 过程问题的**解决策略**集中于此。核心原则:**纪律不在每会话必读的文件里 = 等于没有;纪律没有触发点 = 早晚会漏** → 落地用**三层结构:锚点(看得见)→ hook(提醒)→ CI(躲不掉)**。
   **踩坑后照其 §6 体例追加一篇,勿只写在聊天/commit 里**。本仓已挂指针;`.claude/hooks/kb-drift-sentinel.sh`(SessionStart)在库变动时提醒;库路径可用 `KB_AVOID_PITFALLS_DIR` 覆盖(跨机器时用)。
 
@@ -260,7 +260,7 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
   > (`.claude/hooks/`、`.githooks/`、`tools/`)—— 改门禁脚本**现在也有人看着了**。
   > **规则向前生效、不追溯**:扩范围前的历史提交会被 `check_gate_bypass.py` 追溯标记,CI 用 base/before 天然限定为新提交。
   > 若确为纯注释/无行为变化,走**带理由的豁免** `[no-test: <理由>]`(裸标记不再放行)—— 本仓 `bc23a13` 即为一次活例。
-- **门禁硬化已落地(2026-09-11 凌晨,8 个 commit)**:skills 三层结构(锚点对应表 → hook 哨兵 → CI 检查)+ **门禁左移**(`impl-guard.sh`,PreToolUse ask)+ **门 1/门 2**(commit-msg:认实现先于测试 + 未调用 `test-driven-development` 即拒提交)。**盲测实证 2/2 复现**:两个空上下文子 Agent 均被门 1/门 2 拦下,并**主动调用 `test-driven-development` 回退重做**。策略沉淀在 `~/Desktop/Product/agent-pitfalls-kb/` 01·02(§4.9)·03。
+- **门禁硬化已落地(2026-09-11 凌晨,8 个 commit)**:skills 三层结构(锚点对应表 → hook 哨兵 → CI 检查)+ **门禁左移**(`impl-guard.sh`,PreToolUse ask)+ **门 1/门 2**(commit-msg:认实现先于测试 + 未调用 `test-driven-development` 即拒提交)。**盲测实证 2/2 复现**:两个空上下文子 Agent 均被门 1/门 2 拦下,并**主动调用 `test-driven-development` 回退重做**。策略沉淀在 `~/Desktop/Product/agent-facing/agent-pitfalls-kb/` 01·02(§4.9)·03。
   > ⚠️ **2026-09-16 强度更正(门 2)—— 如实标,不改实现**:门 2 的判据读 `.claude/traces/latest.json` 的
   > `skills`,而那是**会话累计**字段 ⇒ **开头调一次,之后本会话所有提交永久满足**。
   > 实测(2026-09-15 会话):`skill_calls=4`(TDD 只在早期调 1 次)/ `bash=208` / `edit=38`,
