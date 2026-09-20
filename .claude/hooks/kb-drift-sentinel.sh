@@ -12,7 +12,7 @@
 # opt-in:设 KB_SENTINEL=1 才生效(注册处已内联设置);可用 KB_AVOID_PITFALLS_DIR 覆盖库路径。
 [ "$KB_SENTINEL" = "1" ] || exit 0
 
-KB="${KB_AVOID_PITFALLS_DIR:-$HOME/Desktop/Product/agent-pitfalls-kb}"
+KB="${KB_AVOID_PITFALLS_DIR:-$HOME/Desktop/Product/agent-facing/agent-pitfalls-kb}"
 ROOT="$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)" || exit 0
 MANIFEST="$ROOT/.claude/.kb-avoid-manifest"
 
