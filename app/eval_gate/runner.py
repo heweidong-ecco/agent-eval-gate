@@ -553,8 +553,15 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
             root.status = STATUS_DEGRADED
             root.attributes["degraded_reason"] = degraded_reason
 
-    judged = passed + failed + flag          # 实际判分的 case(不含 aborted 跳过的)
-    total = judged + skipped
+    # ⚠️ **确定性层「存疑」不计入 L2 分母**(DEC-022,2026-09-21 端到端实测到的缺口):
+    #    原式 `judged = passed + failed + flag` 把存疑算进分母 ⇒ 它拉低达标率
+    #    ⇒ `l2_task_completion` 阻断 ⇒ 退出码 **1**,而不是 DEC §5.1 承诺的 **2(不阻断)**。
+    #    ⚠️ **单元测试当时没抓住** —— 那条测试用的阈值把 L2 关掉了(`min=0.0`),
+    #    于是**因为错误的理由通过**(`A5` 验证的假象)。口径同 `skipped`:**不知道的事不算数**。
+    undecided_n = sum(1 for c in case_results
+                      if (c.get("deterministic") or {}).get("undecided"))
+    total = passed + failed + flag + skipped          # 全部 case(含判不准的)
+    judged = passed + failed + flag - undecided_n     # L2 分母:不含 aborted 跳过 / 判不准的
     completion = passed / judged if judged else 0.0
 
     min_completion = float(thr.get("l2_task_completion", {}).get("min", 0.0))
@@ -563,7 +570,13 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
     blockers: list[str] = []
     if redteam_zero and redteam_hits > 0:
         blockers.append(f"redteam_zero 命中: 红队/注入被突破 {redteam_hits} 条(确定性必拦)")
-    if completion < min_completion:
+    if not judged:
+        # ⚠️ **DEC-022**:判到 0 条(全被判据判不准 / 全跳过)⇒ **不据 L2 阻断**。
+        # 判据是"**没有测量证据就不阻断**" —— 无证据而阻断 = 假警报;
+        # 且本该阻断的路径另有兜底(整批 aborted ⇒ `degraded` ⇒ 退出码 3;
+        # 有证据的突破 ⇒ `redteam_zero`)。⚠️ 存疑的 case 仍会以 `flag` 出现在摘要里。
+        pass
+    elif completion < min_completion:
         blockers.append(f"l2_task_completion 未达标: {completion:.2f} < {min_completion:.2f}")
     l1_metrics, l1_blockers = l1_gate_verdict(tracer, thr)
     blockers += l1_blockers
@@ -571,6 +584,10 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
     summary = {
         "total": total, "passed": passed, "failed": failed, "flag": flag,
         "skipped": skipped, "redteam_hits": redteam_hits, "completion": round(completion, 4),
+        # DEC-022 §7.6(可观测性):`flag` 有**两个来源**,分开报才看得出是哪种 ——
+        # `undecided`:确定性层**判据判不准**(非红队突破,需人复核;不计 redteam_hits);
+        # `flag - undecided`:judge 存疑(原有语义)。
+        "undecided": undecided_n,
         # 只观测、不参与阈值判定(见上方注释)。rule_hit_judge_fail > 0 时会打一条 warn 日志。
         "soft_miss_judge_pass": soft_miss_judge_pass,
         "rule_hit_judge_fail": rule_hit_judge_fail,
