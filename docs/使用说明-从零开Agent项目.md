@@ -22,7 +22,7 @@
 
 ### 方式 B · 手动(不依赖 skill,可离线)
 ```bash
-cp -R /Users/heweidong/Desktop/Product/product-agent-dev-os/scaffold/agent/ ./<新项目名>/
+cp -R /Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/scaffold/agent/ ./<新项目名>/
 cd <新项目名>
 rm 初始化-runbook.md            # 一次性引导文件,拷完即删
 # 按 初始化-runbook.md 曾写的内容做(等价):

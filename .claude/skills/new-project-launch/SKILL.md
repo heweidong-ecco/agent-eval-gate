@@ -8,13 +8,13 @@ description: 用 product-agent-dev-os Kit 启动一个新 Agent 项目——拷 
 作用:把 product-agent-dev-os 的 `scaffold/agent/` 变成一个"在 GitHub、装好 skills、可立刻按 B 阶段1 跑"的新 Agent 项目。
 
 ## 前置
-- 本 Kit 路径:`/Users/heweidong/Desktop/Product/product-agent-dev-os`(硬编码;若 Kit 已移动,问用户新路径)。
+- 本 Kit 路径:`/Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os`(硬编码;若 Kit 已移动,问用户新路径)。
 - 用户给定:新项目名 + 一句话简介(若无简介,先问清再动手——不编造简介)。
 
 ## 步骤(流程照 scaffold/agent/初始化-runbook.md)
 1. 定目录:`<目标父目录>/<新项目名>`(默认 `~/Desktop/Product/<新项目名>`)。
-2. 拷贝 scaffold:`cp -R /Users/heweidong/Desktop/Product/product-agent-dev-os/scaffold/agent/ <目录>/`。
-3. 填占位:改 `CLAUDE.md`(`agent-eval-gate`/`/Users/heweidong/Desktop/Product/product-agent-dev-os/知识库-Agent-System` = `/Users/heweidong/Desktop/Product/product-agent-dev-os/知识库-Agent-System`/指针)、`需求基线.md`/`总纲.md`/`ROADMAP.md` 标题;补拷 `docs/`、`github/`(当 Kit M1 就绪,见 runbook)。
+2. 拷贝 scaffold:`cp -R /Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/scaffold/agent/ <目录>/`。
+3. 填占位:改 `CLAUDE.md`(`agent-eval-gate`/`/Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/知识库-Agent-System` = `/Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/知识库-Agent-System`/指针)、`需求基线.md`/`总纲.md`/`ROADMAP.md` 标题;补拷 `docs/`、`github/`(当 Kit M1 就绪,见 runbook)。
 4. 装 skills:`mkdir -p .claude/skills`;把本 Kit `skills/agent-system-creator`(核心)、`gate-review`、`留痕-checks`、`new-project-launch` 拷入 `.claude/skills/`。
 5. `git init -b main`;`git add -A && git commit -m "chore: <项目> 初始化(Agent scaffold)"`。
 6. GitHub 私有仓:优先 `gh repo create <owner>/<name> --private --source . --remote origin --push`;gh 不可用时请用户在网页建好给 URL 再 add remote+push。

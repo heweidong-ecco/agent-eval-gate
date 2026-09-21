@@ -3,7 +3,7 @@
 - 版本:0.1 · 日期:2026-09-09
 - 图例:✔ 完成 · ▶ 进行中 · ⬜ 待办 · 🔒 被依赖阻塞
 - 依据:B `知识库-Agent-System/04-分阶段工作流/04-阶段1~6`(每阶段含 门禁/产出/注入原则);推进节奏见 B `02-方法论-迭代交付与MVP`(MVP 先行,跑通 1→12 微循环再横向扩展)。
-- B 知识库绝对路径:`/Users/heweidong/Desktop/Product/product-agent-dev-os/知识库-Agent-System`(阶段卡/模块文件所在)。
+- B 知识库绝对路径:`/Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/知识库-Agent-System`(阶段卡/模块文件所在)。
 
 ## 当前指针(每次 commit 前更新)
 
@@ -418,7 +418,7 @@ EVAL_SUT_FASTAPI_API_KEY=… tools/sut-harness/run_sut.sh     # 能力探针会�
 #### 📌 环境与产物备查(交给下一个会话)
 
 - **被测服务**:`tools/sut-harness/run_sut.sh`(含能力探针;用法与 4 条陷阱见其 README)。**别再直接用原 `rag-api` 容器**(镜像陈旧)。
-- **被测仓**:`/Users/heweidong/Desktop/Product/fastapi-rag-agent` @ **`f2dad78`**
+- **被测仓**:`/Users/heweidong/Desktop/Product/agent-projects/projects/fastapi-rag-agent` @ **`f2dad78`**
   (两处修复已推 GitHub:**不再"零改动"**,跨该修复的基线不可直接比较)。
 - **知识库 70 篇**(62 原始 + 8 篇补入;补入的带 `source=eval-gap-fill-*` 可追溯)。
 - **预算口径**:真实一轮实测 **2.35–2.91 万 token**(均值 ≈2.6 万)⇒ **按 3 万/轮报备**。
@@ -437,7 +437,7 @@ EVAL_SUT_FASTAPI_API_KEY=… tools/sut-harness/run_sut.sh     # 能力探针会�
 - ⚠️ **被测已不再"零改动"**:2026-09-11 业务方授权修复其真实缺陷 → **`85e456b` 已推 GitHub**
   (`api/query_rewriter.py`:查询改写空返回导致静默降级 —— 回退原问题 + max_tokens 200→800 + 只缓存非空)。
   此前基线(`34/40`)是在**未修**的 `36aa291` 上取得的 ⇒ **跨该修复不可直接比较**。
-- 被测仓:`/Users/heweidong/Desktop/Product/fastapi-rag-agent`(基线 `36aa291` → 修后 `85e456b`)
+- 被测仓:`/Users/heweidong/Desktop/Product/agent-projects/projects/fastapi-rag-agent`(基线 `36aa291` → 修后 `85e456b`)
 - **知识库:62 篇**(46 原始 + seed 16 篇);其中 **29 篇是 `test`/`test_docs` 占位语料**,疑挤压 `top_k=3` 召回
 - 被测连 `127.0.0.1`(不是 `localhost`);外网调用需 `SSL_CERT_FILE=/etc/ssl/cert.pem`
 - judge 模型:`deepseek-v4-flash`(⚠️ 网关会**校验**模型名并返回可用名列表;`.env` 里**行内注释会被 `--env-file` 当成值**)

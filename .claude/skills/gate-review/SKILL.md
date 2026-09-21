@@ -9,7 +9,7 @@ description: 执行 B(知识库-Agent-System)阶段门的退出检查——读�
 
 ## 输入
 - 阶段号(1~6)+ 该阶段产出物位置(如 `需求基线.md`/`总纲.md`/PR)。
-- B 知识库绝对路径:默认读项目 `CLAUDE.md` 里的 `/Users/heweidong/Desktop/Product/product-agent-dev-os/知识库-Agent-System`;读不到则问用户。
+- B 知识库绝对路径:默认读项目 `CLAUDE.md` 里的 `/Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/知识库-Agent-System`;读不到则问用户。
 
 ## 步骤
 1. 读 B 阶段卡 `<B>/04-分阶段工作流/04-阶段<X>-*.md`,取出「本阶段门禁」清单(和产出物、应注入原则)。
