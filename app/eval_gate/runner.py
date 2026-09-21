@@ -268,9 +268,20 @@ def _grade_case(case: Case, answer: str, sources: list[str], judge: Judge | None
     res: dict[str, Any] = {
         "id": case.id, "module": case.module, "deterministic_only": False,
         "deterministic": {"passed": rule.passed, "hard_passed": rule.hard_passed,
-                          "soft_missed": rule.soft_missed, "issues": rule.issues},
+                          "soft_missed": rule.soft_missed, "undecided": rule.undecided,
+                          "issues": rule.issues},
         "answer": answer, "sources": sources,
     }
+    if rule.undecided:
+        # DEC-022 §5.2(2026-09-21 签核 D-26):**判据自己承认判不准** ⇒ 记 `flag`
+        # (exit 2,**不阻断**),**不进 judge** —— 两条路径一致。
+        # ⚠️ 早返回是**刻意的**:让"存疑"根本不产生判分器调用(既守口径,也不白花钱)。
+        res["judge_used"] = False
+        res["verdict"] = "flag"
+        res["score"] = 0.0
+        res["reasons"] = list(rule.issues)
+        res["evidence_refs"] = []
+        return res, False
     if judge is None:
         # 兜底(DEC-004 §2.4,签核 D-15):无 judge ⇒ 确定性层是**唯一**判据,**含软层**
         # (rule.passed = hard_passed ∧ ¬soft_missed)—— 此值正是我们要的语义。
@@ -477,23 +488,32 @@ def evaluate(ev: EvSet, quality: str = "faithful", judge: Judge | None = None,
                            case_id=case.id, mode="deterministic_only") as rsp:
                     rule = run_deterministic(case, output.answer)
                     ok = rule.passed
+                    # DEC-022 §5.1(2026-09-21 签核 D-26):第三态「存疑」——
+                    # 有证据型判据、且两不命中 ⇒ 判据自己承认判不准 ⇒ `flag`,**不阻断**。
+                    undecided = rule.undecided
+                    verdict = "pass" if ok else ("flag" if undecided else "fail")
                     if rsp is not None:
                         rsp.attributes["passed"] = ok
-                        if not ok:
+                        rsp.attributes["undecided"] = undecided
+                        if not ok and not undecided:
                             rsp.status = STATUS_ERROR
                 case_results.append({
                     "id": case.id, "module": case.module, "deterministic_only": True,
-                    "deterministic": {"passed": ok, "issues": rule.issues},
-                    "judge_used": False, "verdict": "pass" if ok else "fail",
+                    "deterministic": {"passed": ok, "hard_passed": rule.hard_passed,
+                                      "soft_missed": rule.soft_missed,
+                                      "undecided": undecided, "issues": rule.issues},
+                    "judge_used": False, "verdict": verdict,
                     "score": 1.0 if ok else 0.0, "reasons": list(rule.issues),
                     "evidence_refs": [], "answer": output.answer, "sources": output.sources,
                     "refused": output.refused,
                 })
                 if ok:
                     passed += 1
+                elif undecided:
+                    flag += 1            # 存疑 ⇒ exit 2(需人工),**不是**红队突破
                 else:
                     failed += 1
-                    redteam_hits += 1  # 红队/注入被突破
+                    redteam_hits += 1  # 红队/注入被突破(**有证据**的才算)
                 if tracer is not None:  # 评估结果是一等遥测(日志-schema 规则⑤)
                     tracer.log("info" if ok else "warn", "case", "grade",
                                input={"case_id": case.id, "module": case.module,
