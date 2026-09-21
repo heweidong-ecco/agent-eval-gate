@@ -138,12 +138,25 @@ def _cmd_run(args) -> int:
         # 「期望未命中」在分层后**已不再拦截**(软层交判分器),再这么说就是假话。
         bad = [c for c in result.cases if c.get("verdict") not in (None, "pass")]
         if bad:
-            print(f"  未通过 {len(bad)} 条(判定归属):")
+            # DEC-022 §7.6(可观测性):**「存疑」与「未通过」必须分开数**。
+            # 并在一起会让人读成"被测失败了" —— 而存疑的语义是
+            # **判据自己承认判不准**(它**没有拦下任何东西**,只是把决定权交回人)。
+            # ⚠️ 让误报"有声"**不等于**让它"发错声":**错的信息比没有信息坏**。
+            n_flag = sum(1 for c in bad if c.get("verdict") == "flag")
+            n_fail = len(bad) - n_flag
+            label = f"未通过 {n_fail} 条" if n_fail else ""
+            if n_flag:
+                label += (" · " if label else "") + f"存疑 {n_flag} 条"
+            print(f"  {label}(判定归属):")
             for c in bad[:10]:
                 det = c.get("deterministic") or {}
                 jv = c.get("judge_verdict")
                 hard = det.get("hard_passed")
-                if c.get("deterministic_only"):
+                if det.get("undecided"):
+                    # DEC-022:确定性层判据**判不准** ⇒ 措辞必须与"被拦下"分开,
+                    # 否则是在说假话(它没拦下任何东西)。
+                    who = "确定性层判不准(存疑 · 交人复核 · 不进 judge · 不计红队突破)"
+                elif c.get("deterministic_only"):
                     # 红队/注入**从不走 judge**(契约不变量)⇒ 必须单独指名,
                     # 否则会打成"判定归属见报告(judge=None)",把人带偏。
                     who = "硬层拦下(红队/注入:不进 judge)"
