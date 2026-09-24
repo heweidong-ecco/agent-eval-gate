@@ -301,6 +301,24 @@ def test_commit_msg_gate1_rejects_bare_no_test_marker():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def _trace_with_transcript(d: Path, lines: list | None = None) -> None:
+    """按**新契约**造 trace:门 2 自 `DEC-020` α(签核 D-29)起**要读转录**。
+
+    默认转录 = 只有一次对 `app/a.py` 的编辑、**没有 TDD** ⇒ 门 2 应当拒。
+    ⚠️ 旧版本的测试只造 `latest.json`(无转录)⇒ 新判据会判"判不了"而放行 ——
+    那不是放水,是**契约变了**,故这里按新契约补上。
+    """
+    tp = d / "sess.jsonl"
+    body = lines if lines is not None else [
+        {"type": "assistant", "timestamp": "2026-09-24T10:00:10.000Z",
+         "message": {"content": [{"type": "tool_use", "name": "Write",
+                                  "input": {"file_path": str(d / "app" / "a.py")}}]}}]
+    tp.write_text("\n".join(json.dumps(x, ensure_ascii=False) for x in body), encoding="utf-8")
+    (d / ".claude" / "traces" / "latest.json").write_text(
+        json.dumps({"session_id": "s", "skills": "grilling(1)", "sources": {"main": str(tp)}}),
+        encoding="utf-8")
+
+
 def test_commit_msg_gate2_blocks_when_tdd_skill_absent():
     """门 2:改了实现 + 也改了测试,但本会话没调用过 test-driven-development → 拒。"""
     d = _tmp_repo()
@@ -308,10 +326,8 @@ def test_commit_msg_gate2_blocks_when_tdd_skill_absent():
         _write(d, "app/a.py")
         _write(d, "tests/test_a.py")
         subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
-        # 造一份"只有别的 skill"的 trace
-        (d / ".claude" / "traces" / "latest.json").write_text(
-            json.dumps({"session_id": "s", "skill_calls": 1, "skills": "grilling(1)"}),
-            encoding="utf-8")
+        # 造"只有别的 skill + 一份无 TDD 的转录"的 trace
+        _trace_with_transcript(d)
         r = subprocess.run(["sh", str(d / ".githooks" / "commit-msg"), str(_msg(d, "feat: x\n"))],
                            cwd=d, capture_output=True, text=True)
         assert r.returncode == 1, "门 2 应拒绝"
@@ -343,8 +359,7 @@ def test_commit_msg_gate2_rejects_bare_no_skill_marker():
         _write(d, "app/a.py")
         _write(d, "tests/test_a.py")
         subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
-        (d / ".claude" / "traces" / "latest.json").write_text(
-            json.dumps({"session_id": "s", "skills": "grilling(1)"}), encoding="utf-8")
+        _trace_with_transcript(d)
         r = subprocess.run(["sh", str(d / ".githooks" / "commit-msg"),
                             str(_msg(d, "feat: x [no-skill]\n"))],
                            cwd=d, capture_output=True, text=True)
