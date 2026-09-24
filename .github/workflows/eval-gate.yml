@@ -93,6 +93,12 @@ jobs:
             echo "✅ 本次未改动评测集/阈值,跳过"
           fi
 
+      - name: 锚点守卫 —— 指针/交接段里不许写死 sha(它下次合并就会过期)
+        # 动机(2026-09-21 实测):锚点写了 `main = 80b3309`,三天后实际已是 `4161da8` ——
+        # 不报错、不变红,只是**安静地误导每一个读它的人**。三层结构里这一层是「躲不掉」。
+        # 口径:只扫「当前指针 / 📌 交接」段,遇「📜 历史」横幅即停(那里的 sha 是证据,不是断言)。
+        run: python3 tools/check_anchor_no_sha.py --root .
+
       - name: skill 覆盖检查(装了 skill 必须登记到路由/锚点表;母体 KD-9)
         run: ./tools/check-skill-coverage.sh .claude/skills -- CLAUDE.md
 
