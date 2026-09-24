@@ -226,11 +226,27 @@ def test_prompt_states_refusal_boundary_rule():
     assert "不得" in sysp and ("flag" in sysp)
 
 
-def test_prompt_does_not_license_passing_non_refusal_stuffing():
-    """⚠️ **收窄的边界**:只放开"拒答语境",**不**放开"答非所问的关键词堆砌" ——
-    后者是 DEC-004 刻意保留的防堆砌闸(判分器仍可判 fail)。
+def test_exemption_is_scoped_to_refusal_context_in_the_text_itself():
+    """⚠️ **收窄的边界,写成能红的判据**(2026-09-24 改,`DEC-019` 的 β / 签核 D-28)。
 
-    若哪天把"答非所问"也写成 pass,这条会变红 —— 那必须先有 DEC(见 DEC-009 §未决)。
+    **原守卫为什么不算数**:它是
+        `assert "答非所问" not in sysp.replace("答非所问时", "")`
+    —— **纯字符串检查**,**在洞存在时照样绿**:
+    提示词**段尾**那句「但『**是否真正作答**』不改变字面命中的结论」**读起来是普遍规则**
+    (条件只写在**段首**),判分器据此**把豁免扩大到了非拒答**;
+    而"答非所问"四个字**确实没写进提示词** ⇒ 守卫查的东西与要守的性质**隔了一层**。
+    实测后果:3 条「堆齐候选词却没回答」的样本被放行(`DEC-019 §1.3`)。
+
+    **本守卫改法 = 契约 + 局部性**:那句豁免**必须显式带"仅拒答"的条件,且条件就在它旁边**。
+    - 红的方式:把条件删掉/挪远 ⇒ 本条**必红**;
+    - ⚠️ 它仍是**文本层**的 —— **语义层由金丝雀守**(`tools/judge_canary.py`,
+      喂构造答案 ⇒ 断言 0 条 pass);金丝雀要**真判分器** ⇒ 付费、**不进 CI**。
     """
-    sysp = _sys_prompt()
-    assert "答非所问" not in sysp.replace("答非所问时", ""), "不得把『答非所问』也写成放行条件"
+    lines = _sys_prompt().splitlines()
+    idx = [i for i, ln in enumerate(lines) if "不改变字面命中" in ln]
+    assert idx, "提示词里应当有那条豁免句 —— 没有它,本测试的前提就变了"
+    for i in idx:
+        near = "".join(lines[max(0, i - 1): i + 1])
+        assert "拒答" in near, f"豁免句旁边必须出现『拒答』:{near!r}"
+        assert any(w in near for w in ("仅", "只", "限")), (
+            f"豁免句必须**显式带条件**(仅拒答语境);现在它读起来像普遍规则:{near!r}")
