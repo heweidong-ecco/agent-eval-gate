@@ -63,22 +63,35 @@ fi
 # 提交发生在会话中途(Stop hook 尚未跑),故此处**先刷新**再判
 printf '{"session_id":"%s"}' "$sid" | SKILL_TRACE=1 "$ROOT/.claude/hooks/skill-trace.sh" 2>/dev/null || true
 
-if grep -q 'test-driven-development' "$TRACE" 2>/dev/null; then
+# 【DEC-020 α · 签核 D-29 · 2026-09-24】判据从「**本会话出现过**」改成「**本次改动之前**调过」。
+#   原判据 = `grep -q 'test-driven-development' latest.json`,读的是**会话累计**的 skills 字段
+#   ⇒ **开头调一次,之后本会话所有提交永久满足** ⇒ 门退化成"一个永远不失败的检查"。
+#   实测(2026-09-15 那场):TDD 只在早期调 1 次,之后 **4 个编码任务**一次没调,**而门全程未响**。
+#   新判据 = **时序**:见 `tools/check_skill_before_edit.py` 的 docstring(含判不了时的处置)。
+MAIN=$(sed -n 's/.*"main"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TRACE" 2>/dev/null | head -1)
+if [ -z "$MAIN" ]; then
+  printf '⚠ 门 2 跳过:trace 里没有本会话转录路径,判不了。\n' >&2
+  exit 0
+fi
+IMPL=$(printf '%s\n' "$CHANGED" \
+  | grep -E '^(app|backend|src)/.*\.(py|ts|js)$|^(\.claude/hooks|tools)/.*\.(sh|py)$|^\.githooks/' \
+  | paste -sd, -)
+if REASON=$(python3 "$ROOT/tools/check_skill_before_edit.py" \
+      --transcript "$MAIN" --root "$ROOT" --files "$IMPL" 2>&1); then
   exit 0
 fi
 
 cat >&2 <<EOF
 
-✗ 门 2(commit-msg)未通过:改了实现,但本会话**没有调用过 test-driven-development**
+✗ 门 2(commit-msg)未通过:改了实现,但**本次改动之前**没有调用过 test-driven-development
 
-  本会话的 Skill 调用记录(来自 $(basename "$TRACE")):
-    $(sed -n 's/.*"skills":"\([^"]*\)".*/    \1/p' "$TRACE" 2>/dev/null)
+  $REASON
 
   二选一:
-    1) 调用 'test-driven-development' skill 走一遍(先写会失败的测试),再提交;
-    2) 若本次无需(如纯配置/文档性质),提交信息里写 [no-skill: <理由>] —— **必须带理由**。
+    1) 先调用 'test-driven-development'(先写会失败的测试),**再动实现**;
+    2) 若本次确实无需(如纯配置/文档性质),提交信息里写 [no-skill: <理由>] —— **必须带理由**。
 
-  (依据:母体 KD-9;本门把"该调用 skill 却跳过"从软约束变成可机器校验 ——
-   见 避坑库 02 与 docs/复盘/)
+  (依据:`DEC-020` 的 α / 签核 **D-29** —— 原判据是"本会话**出现过**",
+   那等于**一次调用后本会话永久满足**;避坑库 `A2-R15`:门禁判据不得锚在累计状态上)
 EOF
 exit 1
