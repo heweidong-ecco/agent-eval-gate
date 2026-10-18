@@ -1,29 +1,44 @@
 #!/usr/bin/env bash
 # 在容器里跑真实被测(`01.FastAPI RAG Agent`),供评测门做真实链路评测用。
 #
-# 定位:**评测门的运行适配层**,不是被测的一部分。**被测仓零改动** ——
-# 只读挂载它的 `api/`,所有补丁都在容器运行时(见 README「退出条件」)。
+# 定位:**评测门的运行适配层**,不是被测的一部分。被测仓零改动 ——
+# 只读挂载它的源码目录(`app/`,兼容旧的 `api/`),所有补丁都在容器运行时。
+#
+# 🔴 2026-10-18:被测仓结构已从 `api/` 改为 `app/`,并有了**官方镜像**
+#    `fastapi-rag-agent:latest`(由被测仓 `app/Dockerfile` 构建)
+#    ⇒ 达到本 harness README 的「退出条件」,改走官方镜像;
+#      旧的 `pip 补装 /deps 卷 + sut_run.py` 启动路径**退役**(文件保留,不再使用)。
 #
 # 用法:
-#   tools/sut-harness/run_sut.sh                    # 用默认被测路径
-#   EVAL_SUT_REPO=/path/to/sut tools/sut-harness/run_sut.sh
+#   tools/sut-harness/run_sut.sh
+#   # 评测隔离库 / 放宽会话预算(新版被测默认 5 万,单轮会触顶)
+#   EVAL_SUT_DB=rag_eval_20261018 EVAL_SUT_SESSION_TOKEN_LIMIT=200000 tools/sut-harness/run_sut.sh
 #
 # 退出码:0 = 就绪且**能力探针通过**;1 = 起不来;2 = 起来了但答不了(见 README §陷阱)
 set -euo pipefail
 
 SUT_REPO="${EVAL_SUT_REPO:-/Users/heweidong/Desktop/Product/agent-projects/projects/fastapi-rag-agent}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE="${EVAL_SUT_IMAGE:-my-fixed-name-api}"
+ROOT="$(cd "$HERE/../.." && pwd)"
+IMAGE="${EVAL_SUT_IMAGE:-fastapi-rag-agent:latest}"
 CONTAINER="${EVAL_SUT_CONTAINER:-rag-api-eval}"
-NETWORK="${EVAL_SUT_NETWORK:-my-fixed-name_app-net}"
-DEPS_VOLUME="${EVAL_SUT_DEPS_VOLUME:-sut-pydeps}"
+NETWORK="${EVAL_SUT_NETWORK:-fastapi-rag-agent_app-net}"
 PORT="${EVAL_SUT_PORT:-8000}"
 API_KEY="${EVAL_SUT_FASTAPI_API_KEY:-}"
+IDENTITY="${EVAL_SUT_IDENTITY:-$ROOT/eval/runs/.sut-harness.env}"
+LOGS_DIR="${EVAL_SUT_LOGS_DIR:-$ROOT/eval/runs/sut-logs}"
 
 log() { printf '[sut-harness] %s\n' "$*"; }
 die() { printf '[sut-harness] ✗ %s\n' "$*" >&2; exit 1; }
 
-[ -d "$SUT_REPO/api" ] || die "被测仓路径不对(缺 api/):$SUT_REPO —— 用 EVAL_SUT_REPO 指定"
+# 0) 源码目录:优先新结构 `app/`,兼容旧结构 `api/` ----------------------------
+if [ -d "$SUT_REPO/app" ]; then
+  SUT_SRC="$SUT_REPO/app"
+elif [ -d "$SUT_REPO/api" ]; then
+  SUT_SRC="$SUT_REPO/api"
+else
+  die "被测仓路径不对(缺 app/,也没有旧 api/):$SUT_REPO —— 用 EVAL_SUT_REPO 指定"
+fi
 [ -f "$SUT_REPO/.env" ] || die "被测仓缺 .env(容器要用它做 env-file):$SUT_REPO/.env"
 
 # 1) Docker 与依赖容器 -------------------------------------------------------
@@ -36,25 +51,34 @@ for _ in $(seq 1 30); do
 done
 docker exec postgres-rag pg_isready >/dev/null 2>&1 || die "postgres-rag 未就绪"
 
-# 2) 起被测容器 --------------------------------------------------------------
+# 2) 起被测容器(官方镜像 + 只读挂载当前源码)----------------------------------
 # ⚠️ 必须显式 -e 覆盖这两个变量:docker run --env-file **不剥离行内注释**,
-#    被测 .env 里 `LLM_MODEL_FAST=deepseek-v4-flash   # 轻量角色:…` 会把注释整段当值。
-log "重建容器 $CONTAINER(只读挂载被测 api/,跑仓库当前代码)…"
+#    被测 .env 里 `LLM_MODEL_FAST=deepseek-v4-flash   # …` 会把注释整段当值。
+log "重建容器 $CONTAINER(官方镜像 $IMAGE;只读挂载 $SUT_SRC → /src → 复制到可写 /app)…"
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-docker volume create "$DEPS_VOLUME" >/dev/null 2>&1 || true
+mkdir -p "$LOGS_DIR"   # 应用要往 /app/logs 写文件 ⇒ 单独给可写目录(且不写进被测仓)
+
+# ⚠️ 不直接把源码只读挂到 /app:应用会在 /app/.mem0/qdrant 等路径写运行时状态
+#    (2026-10-18 实测:只读挂载 ⇒ OSError [Errno 30] Read-only file system: '/app/.mem0/qdrant/.lock')
+# ⇒ 只读挂 /src,容器启动时复制到可写 /app,再跑 uvicorn。这样既跑**当前代码**,也不碰被测仓。
+
+# 可选覆盖:评测隔离库 / 会话预算(未设置则沿用 .env / 应用默认值)
+EXTRA_ENV=()
+[ -n "${EVAL_SUT_DB:-}" ] && EXTRA_ENV+=(-e "POSTGRES_DB=$EVAL_SUT_DB")
+[ -n "${EVAL_SUT_SESSION_TOKEN_LIMIT:-}" ] && EXTRA_ENV+=(-e "SESSION_TOKEN_LIMIT=$EVAL_SUT_SESSION_TOKEN_LIMIT")
+
 docker run -d --name "$CONTAINER" \
   --network "$NETWORK" -p "$PORT:8000" \
   --env-file "$SUT_REPO/.env" \
   -e DOCKER_ENV=true \
   -e LLM_MODEL_FAST=deepseek-v4-flash \
   -e LLM_MODEL_CHAT=deepseek-v4-flash \
-  -e PYTHONPATH=/deps:/scaffold \
-  -v "$SUT_REPO/api:/app:ro" \
-  -v "$DEPS_VOLUME:/deps" \
-  -v "$HERE:/scaffold:ro" \
+  ${EXTRA_ENV[@]+"${EXTRA_ENV[@]}"} \
+  -v "$SUT_SRC:/src:ro" \
+  -v "$LOGS_DIR:/app/logs" \
   "$IMAGE" \
-  sh -c "pip install --quiet --target=/deps python-multipart ddgs langchain-classic 2>&1 | tail -1; python /scaffold/sut_run.py" \
-  >/dev/null || die "docker run 失败(镜像 $IMAGE 是否存在?)"
+  sh -c 'cp -a /src/. /app/ && exec uvicorn main:app --host 0.0.0.0 --port 8000' \
+  >/dev/null || die "docker run 失败(镜像 $IMAGE 是否存在?先 docker images | grep fastapi-rag)"
 
 # 3) 等就绪 ------------------------------------------------------------------
 for _ in $(seq 1 36); do
@@ -89,9 +113,6 @@ log "就绪:被测在 http://127.0.0.1:$PORT(容器 $CONTAINER)"
 # 门**不可能**自己知道被测的 commit,也不该去问 ⇒ 由本层(唯一知道被测仓与探针结果的一层)导出。
 # 写出而非 export:本脚本是子进程,export 传不回调用者的 shell。
 # 用法:跑评测前 `set -a; . eval/runs/.sut-harness.env; set +a`
-# ⚠️ 本脚本此前**没有** ROOT 变量(实测);不定义就写成了 `/eval/runs/…`(根目录!)
-ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-IDENTITY="$ROOT/eval/runs/.sut-harness.env"
 SUT_COMMIT="$(git -C "$SUT_REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 PROBE_RESULT="ok"
 [ -z "$API_KEY" ] && PROBE_RESULT="skipped"
@@ -102,4 +123,4 @@ EVAL_SUT_VERSION=$SUT_COMMIT
 EVAL_SUT_PROBE=$PROBE_RESULT
 EOF
 log "被测自证已写入 $IDENTITY(commit=$SUT_COMMIT · 探针=$PROBE_RESULT)"
-log "⇒ 跑评测前先:set -a; . eval/runs/.sut-harness.env; set +a"
+log "⇒ 跑评测前先:set -a; . $IDENTITY; set +a"

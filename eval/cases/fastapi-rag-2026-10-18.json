@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "threshold_ref": "eval/阈值.md",
+  "sut_default": "fastapi-rag",
+  "_comment": "2026-10-18 DEC-019 完整 live 回归(run 20261018-182724-e6212c1d,47/48)的失败回灌。被测 = fastapi-rag-agent @ 150a963,隔离语料 rag_eval_20261018(125 行)。本文件是失败案例库,不是评测输入 —— 评测输入见 ../fastapi_rag_golden.evals.json。",
+  "evals": [
+    {
+      "id": 20,
+      "module": "rag",
+      "tags": [
+        "happy-path",
+        "regression"
+      ],
+      "input": {
+        "question": "混合检索比纯向量检索好在哪里？"
+      },
+      "expected": {
+        "answer_contains": [
+          "互补",
+          "取长补短"
+        ]
+      },
+      "source": "01.FastAPI RAG Agent archive eval_dataset.json id:19",
+      "regression": {
+        "from_run": "20261018-182724-e6212c1d",
+        "observed": "被测答『根据现有资料，无法回答。现有上下文仅说明向量检索理解语义但忽略精确关键词，关键词检索精确匹配但不理解语义[来源:2]，未提供混合检索与纯向量检索的比较信息。』；本轮召回 doc id [55, 64, 8]，soft_missed=true，judge=fail。",
+        "root_cause": "被测检索未召回答案所在文档：隔离语料中 doc id=60（source=eval_dataset.json#19）明写『向量检索理解语义，BM25 精确匹配关键词，两者结果互补』，但 top_k=3 返回的是 [55, 64, 8]；doc 64（eval_dataset.json#23）只复述两种检索各自的局限，不含『互补』结论。被测据已召回文档如实拒答，判分器按规则判 fail 正确 —— 不是判分器变严导致的误伤。",
+        "status": "open",
+        "prevention": "待办：核查被测 top_k=3 下为何未召回 doc 60（可对比更早的召回记录）；本轮按纪律不改被测。DEC-019 的误伤判据另看 rule_hit_judge_fail=0。"
+      }
+    }
+  ]
+}
