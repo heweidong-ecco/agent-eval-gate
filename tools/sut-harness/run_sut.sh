@@ -102,8 +102,11 @@ else
   RESP="$(curl -s --max-time 120 -X POST "http://127.0.0.1:$PORT/api/v1/rag/search?mode=accurate_norerank" \
     -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
     -d '{"question":"Python 是一门什么样的编程语言？","top_k":3,"generate_answer":true,"citations":true}' || true)"
-  echo "$RESP" | grep -q '"answer"' \
-    || { echo "$RESP" | head -c 300 >&2; die "能力探针失败:被测无法作答(不要据此判质量,先归因环境)"; }
+  if ! echo "$RESP" | grep -q '"answer"'; then
+    echo "$RESP" | head -c 300 >&2
+    printf '[sut-harness] ✗ 能力探针失败:被测无法作答(不要据此判质量,先归因环境)\n' >&2
+    exit 2   # 契约:2 = 起来了但答不了(与 README / 故障手册一致)
+  fi
   log "✅ 能力探针通过(被测能作答)"
 fi
 

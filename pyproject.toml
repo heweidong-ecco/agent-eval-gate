@@ -4,9 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-eval-gate"
-version = "0.3.0"
+version = "0.4.0"
 description = "Agent 生产就绪评测门:评测集 + 确定性规则 + LLM-as-Judge + 阈值门(自用先行)"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "heweidong-ecco" }]
+keywords = ["llm", "evaluation", "eval", "judge", "ci", "agent"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Developers",
+  "Topic :: Software Development :: Quality Assurance",
+]
 requires-python = ">=3.10"
+
+[project.urls]
+Homepage = "https://github.com/heweidong-ecco/agent-eval-gate"
+Issues = "https://github.com/heweidong-ecco/agent-eval-gate/issues"
+Changelog = "https://github.com/heweidong-ecco/agent-eval-gate/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # pyyaml 仅用于 **dev**:`tests/test_hooks.py` 需要解析 CI 工作流,以守住
