@@ -1,0 +1,68 @@
+name: Bug 报告
+description: 评测门自身的行为异常(不是被测系统的问题)
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告。**安全漏洞请勿在这里提** —— 见 `SECURITY.md`。
+        提之前请先看 `docs/FAQ.md` 与 `docs/部署.md §6`(TLS / IPv6 / 模型名是本机常见坑)。
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 现象
+      description: 发生了什么?给最小复现命令。
+      placeholder: |
+        $ eval-gate run --evals ...
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望 vs 实际
+      description: 期望的 verdict / exit code / 报告字段,与实际看到的。
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / commit
+      description: `git rev-parse --short HEAD` 或 `eval-gate --help` 的版本。
+      placeholder: "0.4.0 / abc1234"
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 环境
+      description: OS、Python 版本、是否 Docker、judge 模型(不要贴 key)。
+      placeholder: "macOS 13 / Python 3.10 / Docker 24 / deepseek-v4-flash"
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据
+      description: |
+        贴 `eval/runs/<run_id>.local.json` 的关键字段、trace_id、报错全文。
+        **先脱敏**(不要贴 key、被测回答原文)。
+      render: text
+    validations:
+      required: false
+
+  - type: dropdown
+    id: eval_impact
+    attributes:
+      label: 是否影响评测结论
+      options:
+        - 是(结论被伪造 / 误判 / 无法复现)
+        - 否(安装 / CLI / 文档 / 环境)
+        - 不确定
+    validations:
+      required: true

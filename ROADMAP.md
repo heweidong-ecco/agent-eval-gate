@@ -8,6 +8,11 @@
 ## 当前指针(每次 commit 前更新)
 
 - `分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`:`main | 阶段4-步骤9 ✅ **已终裁 PASS(D-18)** | E9 观测与成本 + 统计层 | L1 真实基线(`eval/l1_baseline.json`)+ **L1 阈值已接线(DEC-012)** · **L2 ≥0.95(DEC-013)** | 劣化被拦次数 = 1`
+- **✅ 项目自用版已结项(2026-10-18)** —— 见 **`docs/结项报告-自用版-2026-10-18.md`**。
+  未做项 = **明确暂缓**(U2 跨仓 CI · M3 抽取判据 · `id=20` · 背景观察);建议 tag **`v0.4.0`**。
+- **📚 文档面(2026-10-18)**:索引 **`docs/README.md`** · `docs/FAQ.md` · `docs/CLI.md` · `docs/arch/` ·
+  `LICENSE` / `CONTRIBUTING` / `SECURITY` / `SUPPORT` / `CHANGELOG` · `.github/` 模板 · `examples/`;
+  范围与暂缓项见 **`DEC-025`**。
 - **✅ 阶段4-步骤9(P4-2)已终裁(2026-09-14,签核 D-18)** —— 四条门禁逐条判过(**4 过**,第 2 条带 **QPS 显式豁免**);
   `gate-review` 初判的三条缺口已由 `DEC-012` 全部关闭。证据:`docs/reports/P4-2/` + `eval/l1_baseline.json`。
   **界限:仅 P4-2**(`P5-1`/`P6-1`/`P6-2` 同期另行终裁,见下)。
@@ -48,6 +53,8 @@
 | 4 | 过程错误复盘(两轮无效,83,000 judge token) | `docs/复盘/2026-10-18-语料筛选漏掉seed金标语料.md` |
 | 5 | `DEC-019` 补记 §7 | `docs/decisions/DEC-019-判分器放行口径.md` |
 | 6 | **修好 `run_sut.sh`**(适配 `app/` + 官方镜像;env 覆盖隔离库/会话预算) | `tools/sut-harness/run_sut.sh` · `DEC-023 §6` · 单测 11 passed + 真机 exit 0 |
+| 7 | **语料可复现 + 结项** | `eval/corpus/` · `tools/export_eval_corpus.py` · `tools/seed_eval_corpus.py` · `docs/结项报告-自用版-2026-10-18.md` · `integrations/fastapi-rag-agent/` |
+| 8 | **文档面按标准补齐** | `docs/README.md`(索引)· `docs/FAQ.md` · `docs/CLI.md` · `docs/arch/` · `LICENSE`/`CONTRIBUTING`/`SECURITY`/`SUPPORT`/`CHANGELOG` · `.github/` issue+PR 模板 · `examples/` · `DEC-025` |
 
 **对「α 会不会误伤」的回答**:`rule_hit_judge_fail = 0`、`soft_miss_judge_pass = 0`;
 唯一失败 `id=20` 是**真实被测失败**(召回 `[55,64,8]`,未召回含「两者结果互补」的 doc 60),
@@ -64,14 +71,15 @@
   ⚠️ 关键坑:**不能把源码只读直接挂 `/app`**(应用要写 `.mem0/qdrant/.lock`)⇒ 只读挂 `/src` 再复制到可写 `/app`;
 - `EVAL_JUDGE_API_KEY` 曾失效(401),**已由业务方更新**(尾号 `fd3e`)。
 
-#### ⚠️ 下一会话开工要盯的
+#### 📌 结项后只剩维护项(**项目自用版已完结**)
 
 1. **待签核 = 0**;没有未完成的评测节点。
 2. **✅ 环境待办已清**:`tools/sut-harness/run_sut.sh` 已适配 `app/` + 官方镜像,
    单测 11 passed + 真机端到端 exit 0(见 `DEC-023 §6`)。
-3. **非阻塞余项**:① 轮间 2× 延迟悬案(16 轮内 1 次,成因未指名)
-   ② 母体 Kit 缺陷观察(证据 1/2)③ R1 探针(生产库有无文档 —— 本轮已间接回答:**有 345 行**)。
-4. **`id=20` 的检索问题未修**(被测未改),只回灌不结论。
+3. **明确暂缓(不是遗漏)**:① U2 跨仓 CI(`integrations/fastapi-rag-agent/` 模板已备)
+   ② M3 抽取判据(须 DEC)③ `id=20` 被测检索问题(不改被测,只回灌)。
+4. **背景观察**:① 轮间 2× 延迟悬案(16 轮内 1 次,成因未指名)
+   ② 母体 Kit 缺陷观察(证据 1/2)③ R1 探针(生产库有无文档 —— 本轮已答:**有 345 行**)。
 
 ### 📜 历史交接(**2026-09-21** 会话末,**已被上文 2026-10-18 取代**)
 

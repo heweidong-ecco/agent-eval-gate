@@ -9,7 +9,7 @@
 - B 知识库绝对路径:`/Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/知识库-Agent-System`,如 `/Users/heweidong/Desktop/Product/agent-projects/kit/product-agent-dev-os/知识库-Agent-System`(含 README 分层索引;阶段卡在 `04-分阶段工作流/`,模块在 `05-独立模块工作流/`)。
 
 ## 接续协议
-1. 读本文件 → `ROADMAP.md`「当前指针」。
+1. 读本文件 → `ROADMAP.md`「当前指针」;文档导航先看 **`docs/README.md`**(索引)。
 2. 当前指针格式:`分支 | 阶段X-步骤Y | 模块 | L3基线 | 北极星`。例:`main | 阶段1-步骤1 | 无 | 人工介入率 <40% | 工单自动解决率 ≥60%`。
    > ⚠️ **锚点里<u>不写死</u>那些"每次合并都会变"的值** —— 主要是 **commit sha**
    > (实测:2026-09-21 → 09-24,三天里锚点的 `main` sha 就旧了一截)。
@@ -114,15 +114,28 @@
 
 ## 目录(Agent 程序壳)
 ```
-README.md · 需求基线.md · 总纲.md · ROADMAP.md · CLAUDE.md   # 对外说明(API 文档)+ 事实源/架构/执行图/接续锚
-docs/RUNBOOK.md · docs/部署.md · docs/decisions/ · docs/复盘/ · docs/specs/   # 流程(指 B)+ 部署配置 + 决策 + 过程错误复盘 + 节点设计
+README.md · CONTRIBUTING.md · SECURITY.md · SUPPORT.md · CHANGELOG.md · LICENSE(MIT)   # 对外入口 + 仓库健康文件
+需求基线.md · 总纲.md · ROADMAP.md · CLAUDE.md          # 事实源 / 架构 / 执行图 / 接续锚
+docs/README.md(文档索引)· docs/FAQ.md · docs/CLI.md · docs/部署.md
+docs/arch/(当前架构图)· docs/decisions/ · docs/复盘/ · docs/specs/ · docs/reports/   # 架构 + 决策 + 复盘 + 节点设计 + 报告
 contracts/ · templates/                              # 契约(工具/MCP/消息协议)与 spec 模板
-eval/ · eval/cases/ · observability/ · 飞轮/          # 评估门 / **失败回灌用例库** / 观测 / 数据飞轮
-app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
+eval/ · eval/cases/ · eval/corpus/ · observability/ · 飞轮/   # 评估门 / 失败回灌 / 语料清单 / 观测 / 数据飞轮
+app/ · tools/ · examples/ · integrations/            # 实现 / 工具 / 例子 / 发版 CI 模板(未接入)
+.github/(CI + issue/PR 模板)· .claude/skills/ · tests/
 ```
 
-## 当前指针(随推进更新 — 上次更新 **2026-10-18** 会话:`DEC-019` 完整 live 回归已跑完(47/48、exit 0)· 待签核 = 0 · 余项只剩环境待办)
+## 当前指针(随推进更新 — 上次更新 **2026-10-18**:项目**自用版已结项** · 待签核 = 0)
 
+> ✅ **项目自用版已结项(2026-10-18)** —— 见 **`docs/结项报告-自用版-2026-10-18.md`**。
+> 未做项**全部是明确暂缓**(U2 跨仓 CI / M3 抽取判据 / `id=20` / 背景观察),
+> 不是遗漏;建议 tag **`v0.4.0`(自用)**,`v1.0.0` 留给 U2 + 外部验证之后。
+>
+> 📚 **文档面已按标准补齐(2026-10-18)**:
+> 入口 **`docs/README.md`**(索引)· `docs/FAQ.md` · `docs/CLI.md` · `docs/arch/` ·
+> `CONTRIBUTING.md` / `SECURITY.md` / `SUPPORT.md` / `CHANGELOG.md` / `LICENSE`(MIT) ·
+> `.github/ISSUE_TEMPLATE/` + `.github/PULL_REQUEST_TEMPLATE.md` · `examples/`;
+> 范围与暂缓项见 **`DEC-025`**。
+>
 > **🔜 新会话从这里接**:读本段 + `ROADMAP.md`「📌 交接(**2026-10-18**)」即可,不必翻历史。
 > **B 的 12 个节点:已签核闭环 12 / 待终裁 0 / 技术欠账 0** —— 签核号到 **D-29**。
 >

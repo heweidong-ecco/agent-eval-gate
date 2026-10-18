@@ -1,0 +1,74 @@
+# ⚠️ 示例文件(未被使用)—— 复制到 fastapi-rag-agent/.github/workflows/eval-gate.yml 才生效。
+# 本仓不改另一个仓;接入前先读同目录 README.md 的「范围」与「顺序」。
+name: eval-gate
+
+on:
+  workflow_dispatch:
+  # 建议:发版时跑,不要每个 PR 都跑(每次 live ≈4 万 token)
+  # push:
+  #   tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出被测
+        uses: actions/checkout@v4
+        with:
+          path: sut
+
+      - name: 检出评测门(public)
+        uses: actions/checkout@v4
+        with:
+          repository: heweidong-ecco/agent-eval-gate
+          path: eval-gate
+
+      - name: 起被测(postgres + redis + api)
+        working-directory: sut
+        run: docker compose up -d postgres redis api
+
+      - name: 等 /health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8000/health >/dev/null; then exit 0; fi
+            sleep 5
+          done
+          docker compose -f sut/docker-compose.yml logs --tail 50 api
+          exit 1
+
+      - name: 灌评测语料
+        env:
+          EVAL_SUT_FASTAPI_API_KEY: ${{ secrets.EVAL_SUT_FASTAPI_API_KEY }}
+        run: |
+          # TODO(语料): 正文不在公开仓。需在私有侧提供(私有仓 / 加密 artifact),
+          #   还原到 $RUNNER_TEMP/corpus.jsonl 后再执行下面这行。
+          #   清单里的 sha256 会在 seed 前校验,不一致会拒绝。
+          python eval-gate/tools/seed_eval_corpus.py \
+            --corpus "$RUNNER_TEMP/corpus.jsonl" \
+            --manifest eval-gate/eval/corpus/manifest.json \
+            --base-url http://127.0.0.1:8000
+
+      - name: 跑评测
+        env:
+          EVAL_JUDGE_API_KEY: ${{ secrets.EVAL_JUDGE_API_KEY }}
+          EVAL_SUT_FASTAPI_API_KEY: ${{ secrets.EVAL_SUT_FASTAPI_API_KEY }}
+          EVAL_SUT_FASTAPI_BASE_URL: http://127.0.0.1:8000
+          EVAL_SUT_VERSION: ${{ github.sha }}
+          EVAL_SUT_PROBE: ok
+        run: |
+          pip install -e eval-gate
+          eval-gate run \
+            --evals eval-gate/eval/fastapi_rag_golden.evals.json \
+            --report-dir report
+
+      - name: 上传报告与 trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: report/

@@ -88,7 +88,7 @@ def _fake_repo(tmp_path: Path, *, layout: str = "app") -> Path:
     return repo
 
 
-def _run_with_stubs(tmp_path: Path, repo: Path, **over):
+def _run_with_stubs(tmp_path: Path, repo: Path, probe_body: str = '{"answer":"ok"}', **over):
     """用 stub `docker`/`curl` 跑完整脚本,返回 (CompletedProcess, docker 调用记录, 自证文件内容)。"""
     bindir = tmp_path / "bin"
     bindir.mkdir()
@@ -100,10 +100,10 @@ case "$1" in
   *) exit 0 ;;
 esac
 """)
-    _write_stub(bindir, "curl", """
+    _write_stub(bindir, "curl", f"""
 if printf '%s' "$*" | grep -q -- '-w'; then printf '200'; exit 0; fi
-if printf '%s' "$*" | grep -q '/health'; then printf '{"status":"healthy"}'; exit 0; fi
-printf '{"answer":"ok"}'
+if printf '%s' "$*" | grep -q '/health'; then printf '{{"status":"healthy"}}'; exit 0; fi
+printf '%s' '{probe_body}'
 """)
     identity = tmp_path / "identity.env"
     env = {
@@ -160,6 +160,14 @@ def test_db_and_session_limit_are_passed_through(tmp_path):
     run = next(c for c in calls.splitlines() if c.startswith("run "))
     assert "-e POSTGRES_DB=rag_eval_20261018" in run
     assert "-e SESSION_TOKEN_LIMIT=200000" in run
+
+
+def test_probe_failure_exits_2(tmp_path):
+    """`/health` 200 但答不了 ⇒ 必须是 **2**(与 README / 故障手册的退出码一致)。"""
+    repo = _fake_repo(tmp_path, layout="app")
+    r, _, _ = _run_with_stubs(tmp_path, repo, probe_body='{"detail":"no answer"}')
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "能力探针失败" in r.stderr
 
 
 def test_capability_probe_and_identity_are_kept(tmp_path):

@@ -11,6 +11,7 @@ eval/
   阈值.md            建议阈值占位(先定阈值,再看结果)
   evals.json         评估用例样例(仿 B agent-system-creator/evals/evals.json;可多文件拆分)
   cases/             评估用例库(标注三类:意图 / 理想工具调用序列 / 标准答案)——逐步按模块建
+  corpus/            评测语料清单(**正文在仓外**;见 corpus/README.md)
   runs/              回归运行记录(版本 + 结果 + 阈值对比;支撑统计回归与发布门禁)
 ```
 
@@ -26,6 +27,8 @@ eval/
 
 ## 版本纪律
 - `evals.json` / `cases/` 随代码同库提交、可 diff、可回滚;`runs/` 记录每次回归的 commit 与结果。
+- **评测语料**:正文**不进公开仓**(本仓 Public);清单 + sha256 在 `eval/corpus/manifest.json`,
+  正文放仓外;灌库用 `tools/seed_eval_corpus.py`(seed 前校验哈希)。详见 `eval/corpus/README.md`。
 - 工具:DeepEval / Promptfoo / agent-eval / Ragas(评估引擎按需选,参考 B `07-参考-技术选型对比` §五;组织自己定义质量模型)。
 
 ## 评测集 schema 草案(阶段2-步骤4 启动 · 总纲 §3.3 落点)

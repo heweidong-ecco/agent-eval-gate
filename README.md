@@ -7,6 +7,36 @@
 
 ---
 
+## 项目状态(2026-10-18 · 自用版结项)
+
+**v0.4.0(自用版)已结项** —— 验收对照与暂缓项见 **`docs/结项报告-自用版-2026-10-18.md`**。
+
+| | |
+|---|---|
+| 已闭环 | B 六阶段 **12/12** 节点 · M0–M5 · 真实被测 **2 家 / 4 形态** · 最新 live **47/48 · exit 0** · **597 tests** |
+| 明确暂缓 | **U2 真实发版 CI**(模板在 `integrations/`;业务方 2026-10-18 决定暂不动另一个仓)· M3 抽取判据 · 背景观察项 |
+| 复现 live 回归 | 语料清单 `eval/corpus/` → `tools/seed_eval_corpus.py` → `tools/sut-harness/run_sut.sh` → `eval-gate run` |
+
+> `v1.0.0` **不外推**:前置 = U2 接进真实发版 CI + 至少一个外部使用者验证。
+
+---
+
+## 目录
+
+- [项目状态](#项目状态2026-10-18--自用版结项)
+- [30 秒上手](#30-秒上手)
+- [CLI](#cli)
+- [它怎么判(判分链路)](#它怎么判判分链路)
+- [目录](#目录)
+- [文档索引](#文档索引)
+- [常见问题](#常见问题)
+- [开发](#开发)
+- [贡献](#贡献)
+- [安全](#安全)
+- [许可证](#许可证)
+
+---
+
 ## 30 秒上手
 
 ```bash
@@ -30,26 +60,18 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 ## CLI
 
-### `eval-gate run` — 跑一轮评测并出 exit code
+| 子命令 | 用途 |
+|---|---|
+| `run` | 跑一轮评测 → 报告 + exit code |
+| `trace` | 打印某次 run 的 span 树 |
+| `calibrate` | judge 与人工标注的一致率(M1/E7) |
+| `stats` | 从已有 trace 产 L1 基线(零 token) |
 
-| 参数 | 必填 | 说明 |
-|---|---|---|
-| `--evals PATH` | ✅ | 评测集文件(格式见 `eval/README.md` / `contracts/评测-evals-schema.md`) |
-| `--mode good\|bad` | | 被测 prompt 质量:good=忠实 / bad=劣化(**自证用**:劣化必须被拦) |
-| `--threshold FILE` | | 阈值 JSON,覆盖 `eval/阈值.json` |
-| `--offline` | | 强制离线 FakeJudge(**不调真实模型**) |
-| `--report-dir DIR` | | 报告落盘目录(默认 `eval/runs`) |
+完整参数、环境变量与示例见 **`docs/CLI.md`**。
 
 产出:`eval/runs/<run_id>.local.json`(逐条证据)+ `<run_id>.trace.jsonl`(span)+ 结构化日志走 **stderr**(`2>log.jsonl` 采集)。
 
-### `eval-gate trace` — 打印 Trace 视图
-
-| 参数 | 说明 |
-|---|---|
-| `--run RUN_ID` | 指定 run(默认取最近一次) |
-| `--trace-dir DIR` | trace 文件目录(默认 `eval/runs`) |
-
-### exit code 语义(CI 门;契约 `contracts/评测-report.md:40-46`)
+### exit code 语义(CI 门;契约 `contracts/评测-report.md`)
 
 | code | 含义 | CI 处置 |
 |---|---|---|
@@ -82,20 +104,44 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 |---|---|
 | `app/eval_gate/` | E1–E9 实现(schema / adapters / rules / judge / runner / report / obs / cli) |
 | `contracts/` | **契约**(评测集 schema / 被测适配器 / judge / 报告与阈值)—— 事实源 |
-| `eval/` | 评测集、`阈值.md` + `阈值.json`(运行值)、`cases/`(失败回灌)、`runs/`(报告)、`snapshots/` |
+| `eval/` | 评测集、`阈值.md` + `阈值.json`(运行值)、`cases/`(失败回灌)、`runs/`(报告)、`snapshots/`、**`corpus/`(语料清单;正文在仓外)** |
+| `tools/` | **`sut-harness/`**(真实被测运行层)· **`export_eval_corpus.py` / `seed_eval_corpus.py`**(语料复现)· `archive_evidence.py` + `check_evidence_coverage.py`(证据归档/覆盖守卫) |
+| `integrations/` | **发版 CI 接入模板**(⬜ 未接入 —— 业务方决定暂不动另一个仓) |
 | `observability/` | 结构化日志 / trace_id / span 规范 |
-| `docs/` | `RUNBOOK.md`、`decisions/`(签核)、`specs/`(节点设计)、`复盘/`(过程错误集) |
+| `docs/` | `README.md`(**文档索引**)· `FAQ.md` · `CLI.md` · `部署.md` · `decisions/`(签核)· `specs/`(节点设计)· `复盘/` · **`arch/`(当前架构图)** · **结项报告** |
+| `examples/` | 可直接跑的例子(`offline-demo.sh`) |
+| `.github/` | issue 模板 · PR 模板 · CI workflow |
 | `tests/` | 契约测试与回归(`pytest -q`,离线零外网) |
+| 根级健康文件 | `LICENSE`(MIT)· `CONTRIBUTING.md` · `SECURITY.md` · `SUPPORT.md` · `CHANGELOG.md` |
 
 ---
 
 ## 文档索引
 
+**全部文档的导航 → `docs/README.md`。**
+
+- **常见问题** → **`docs/FAQ.md`**(密钥 / 429 / exit code / 语料 / 环境坑)
+- **完整 CLI** → **`docs/CLI.md`**
 - **接续与指针** → `CLAUDE.md`(每会话必读)、`ROADMAP.md`(执行图与当前指针)
-- **业务口径事实源** → `需求基线.md`;架构 → `总纲.md`
+- **项目结项与暂缓项** → **`docs/结项报告-自用版-2026-10-18.md`**
+- **业务口径事实源** → `需求基线.md`;架构蓝图 → `总纲.md`
+- **当前架构图(C4 / 组件 / 时序)** → **`docs/arch/README.md`**
 - **怎么装、怎么接真实被测、本机环境坑** → **`docs/部署.md`**
+- **评测语料怎么复现** → **`eval/corpus/README.md`**
 - **阈值与「为何调」** → `eval/阈值.md`(运行值 `eval/阈值.json`)
 - **失败案例与教训** → `eval/cases/`、`docs/复盘/`
+- **可直接跑的例子** → `examples/`
+
+---
+
+## 常见问题
+
+先看 **`docs/FAQ.md`**。最常见的四类:
+
+- judge 401 / 模型名失效;
+- `/health` 200 但答不了(能力探针);
+- 生产库被污染(345 行)⇒ 必须用隔离库;
+- 429 `QUOTA_EXCEEDED`(被测会话预算 5 万 token)。
 
 ---
 
@@ -109,3 +155,19 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 CI:`.github/workflows/eval-gate.yml` —— 独立成 job(不与代码门合并成一个绿灯),含自证/劣化回归/改动留痕/TDD 痕迹检查。
 
 > **纪律**:改 Prompt / 工具 / 记忆 / **评估集** → 必跑 eval 回归;失败即补 case(`eval/cases/`)。
+
+---
+
+## 贡献
+
+开发环境、TDD/门禁、commit/PR 规则见 **`CONTRIBUTING.md`**;
+issue/PR 模板在 `.github/`。行为准则当前**不适用**(单人维护),触发条件见 `DEC-025`。
+
+## 安全
+
+漏洞请走 GitHub **私密漏洞报告**,⛔ 不要开公开 issue —— 见 **`SECURITY.md`**。
+
+## 许可证
+
+**MIT** —— 见 `LICENSE`。贡献即表示同意以 MIT 许可发布。
+
