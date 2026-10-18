@@ -32,7 +32,8 @@
 2. **被测运行方式**:走官方镜像 `fastapi-rag-agent:latest`(按 `tools/sut-harness/README.md` 的退出条件);
 3. **会话预算**:本轮容器临时设 `SESSION_TOKEN_LIMIT=200000`(新版被测默认 5 万,单轮会触顶);
 4. **judge key**:使用业务方更新后的 `EVAL_JUDGE_API_KEY`;
-5. **旧 harness**:不在本次修改,登记为**唯一环境待办**。
+5. **旧 harness**:本决策做出时先不改(不把环境修复混进回归);
+   **同一任务内已补修** —— 见 §6。
 
 ## 4. 认下的代价与边界(不得省略)
 
@@ -41,7 +42,25 @@
   `eval_dataset.json#10–#25` 的 16 篇 seed,导致一轮 **37/48 的无效结果**;
   补救与防错见 `docs/复盘/2026-10-18-语料筛选漏掉seed金标语料.md`;
 - ⚠️ **隔离库 ≠ 生产库**:它回答"判分器在真实链路里是否误伤",不回答"生产库当前质量如何";
-- ⚠️ **旧 harness 仍是坏的**:下轮若照旧命令跑会直接失败,必须先修或改用本 DEC 的官方镜像命令。
+- ~~⚠️ **旧 harness 仍是坏的**:下轮若照旧命令跑会直接失败~~ ⇒ **已于同一任务内修复(§6)**。
+
+## 6. 补记:harness 已修(2026-10-18,同一任务内)
+
+`tools/sut-harness/run_sut.sh` 已按本 DEC 的官方路径重写:
+
+- 源码目录自动识别:`app/` 优先,兼容旧 `api/`;
+- 默认镜像改为 `fastapi-rag-agent:latest`、网络改为 `fastapi-rag-agent_app-net`;
+- 去掉旧 `/deps` 卷与启动时 `pip install`;
+- 新增两个评测必需的可选覆盖:`EVAL_SUT_DB`(隔离库)与 `EVAL_SUT_SESSION_TOKEN_LIMIT`(会话预算);
+- **源码只读挂到 `/src`,容器内复制到可写 `/app` 再启动**
+  —— ⚠️ 实测:**直接只读挂 `/app` 会失败**(应用要写 `/app/.mem0/qdrant/.lock`,
+  `OSError [Errno 30] Read-only file system`);
+- 保留能力探针与 DEC-016 被测自证。
+
+**验证**:
+- 单测 `tests/test_sut_harness.py` **11 passed**(含用 stub `docker`/`curl` 的 `docker run` 参数契约);
+- 真机端到端:**exit 0**,`/health` 200 + **能力探针通过**,
+  `eval/runs/.sut-harness.env` 记 `EVAL_SUT_VERSION=150a963` / `EVAL_SUT_PROBE=ok`。
 
 ## 5. 实施结果
 

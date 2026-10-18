@@ -142,8 +142,10 @@ app/ .claude/skills/ .github/(CI-CD) tests/          # 实现层
 > - 生产 `rag_db` 已有 **345 行 `documents`**,评测语料只占 **125 行** ⇒ **不能直接拿生产库跑评测**;
 >   本轮用副本库 `rag_eval_20261018`(原库一行未动);
 > - 被测仓结构已从 `api/` 改为 **`app/`**,官方镜像是 **`fastapi-rag-agent:latest`**;
-> - ⚠️ **`tools/sut-harness/run_sut.sh` 已跑不起来**(仍要求 `api/` + 旧镜像 `my-fixed-name-api`)
->   ⇒ **唯一环境待办**:按新结构修它(本轮已按 README 退出条件绕行官方镜像);
+> - ✅ **`tools/sut-harness/run_sut.sh` 已在同一任务内修好**(`DEC-023 §6`):
+>   适配 `app/` + 官方镜像,支持 `EVAL_SUT_DB` / `EVAL_SUT_SESSION_TOKEN_LIMIT`,
+>   单测 11 passed + 真机端到端 exit 0;**关键坑**:不能把源码只读直接挂 `/app`
+>   (应用要写 `.mem0/qdrant/.lock`)⇒ 只读挂 `/src` 再复制到可写 `/app`;
 > - `EVAL_JUDGE_API_KEY` 曾失效(401),**已由业务方更新**(尾号 `fd3e`)。
 >
 > ✅ **2026-09-21 会话完成**(按业务方"建议顺序"逐条执行):

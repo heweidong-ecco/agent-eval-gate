@@ -47,6 +47,7 @@
 | 3 | 唯一失败 `id=20` 回灌 | `eval/cases/fastapi-rag-2026-10-18.json`(`status=open`) |
 | 4 | 过程错误复盘(两轮无效,83,000 judge token) | `docs/复盘/2026-10-18-语料筛选漏掉seed金标语料.md` |
 | 5 | `DEC-019` 补记 §7 | `docs/decisions/DEC-019-判分器放行口径.md` |
+| 6 | **修好 `run_sut.sh`**(适配 `app/` + 官方镜像;env 覆盖隔离库/会话预算) | `tools/sut-harness/run_sut.sh` · `DEC-023 §6` · 单测 11 passed + 真机 exit 0 |
 
 **对「α 会不会误伤」的回答**:`rule_hit_judge_fail = 0`、`soft_miss_judge_pass = 0`;
 唯一失败 `id=20` 是**真实被测失败**(召回 `[55,64,8]`,未召回含「两者结果互补」的 doc 60),
@@ -58,14 +59,16 @@
 - 生产 `rag_db` 已有 **345 行**,评测语料只占 **125 行**(其它项目/测试灌入 220 行)
   ⇒ **不能直接拿生产库跑评测**;本轮用副本库 `rag_eval_20261018`(原库一行未动);
 - 被测仓已从 `api/` 改为 **`app/`**,官方镜像是 **`fastapi-rag-agent:latest`**;
-- 旧 `tools/sut-harness/run_sut.sh` 因此**已跑不起来**(仍要求 `api/` + `my-fixed-name-api` 旧镜像);
+- **`tools/sut-harness/run_sut.sh` 已在同一任务内修好**并真机验证(exit 0 + 能力探针通过):
+  自动识别 `app/`,默认官方镜像/网络,支持 `EVAL_SUT_DB` / `EVAL_SUT_SESSION_TOKEN_LIMIT`;
+  ⚠️ 关键坑:**不能把源码只读直接挂 `/app`**(应用要写 `.mem0/qdrant/.lock`)⇒ 只读挂 `/src` 再复制到可写 `/app`;
 - `EVAL_JUDGE_API_KEY` 曾失效(401),**已由业务方更新**(尾号 `fd3e`)。
 
 #### ⚠️ 下一会话开工要盯的
 
 1. **待签核 = 0**;没有未完成的评测节点。
-2. **环境待办(唯一)**:修 `tools/sut-harness/run_sut.sh`(适配 `app/` 与官方镜像),
-   否则下轮照旧命令会直接失败。本轮已按 README 退出条件绕行官方镜像。
+2. **✅ 环境待办已清**:`tools/sut-harness/run_sut.sh` 已适配 `app/` + 官方镜像,
+   单测 11 passed + 真机端到端 exit 0(见 `DEC-023 §6`)。
 3. **非阻塞余项**:① 轮间 2× 延迟悬案(16 轮内 1 次,成因未指名)
    ② 母体 Kit 缺陷观察(证据 1/2)③ R1 探针(生产库有无文档 —— 本轮已间接回答:**有 345 行**)。
 4. **`id=20` 的检索问题未修**(被测未改),只回灌不结论。
